@@ -43,7 +43,7 @@ const CourseDetail = () => {
   }, [id]);
 
   const activeFlights = useMemo(
-    () => flights.filter((flight) => !flight.endTime).sort((a, b) => a.startTime.localeCompare(b.startTime)),
+    () => flights.filter((flight) => !flight.endTime).sort((a, b) => b.startTime.localeCompare(a.startTime)),
     [flights],
   );
 
@@ -63,6 +63,21 @@ const CourseDetail = () => {
       .filter((student) => !activeFlights.some((flight) => flight.studentId === student.id))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [activeFlights, course]);
+
+  const combinedStudentEntries = useMemo(() => {
+    const active = activeEntries.map((entry) => ({
+      kind: 'active' as const,
+      student: entry.student,
+      flight: entry.flight,
+    }));
+
+    const notFlying = notFlyingStudents.map((student) => ({
+      kind: 'idle' as const,
+      student,
+    }));
+
+    return [...active, ...notFlying];
+  }, [activeEntries, notFlyingStudents]);
 
   const availableExistingStudents = useMemo(() => {
     if (!course) return [];
@@ -199,52 +214,11 @@ const CourseDetail = () => {
         onCourseUpdated={(updatedCourse) => setCourse(updatedCourse)}
       />
 
-      <Space orientation="vertical" size="large" style={{ width: '100%' }}>
-        <Card title="Aktive Schüler im Flug" variant="outlined">
-          {activeEntries.length ? (
-            <List
-              dataSource={activeEntries}
-              renderItem={({ flight, student }) => (
-                <List.Item
-                  actions={[
-                    <Popconfirm
-                      title="Flug abbrechen?"
-                      okText="Ja"
-                      cancelText="Nein"
-                      onConfirm={() => handleAbortFlight(flight.id!)}
-                    >
-                      <Button
-                        danger
-                        icon={<FontAwesomeIcon icon={faBan} />}
-                      />
-                    </Popconfirm>,
-                    <Button
-                      type="primary"
-                      onClick={() => handleLandFlight(flight.id!, student.id!)}
-                      icon={<FontAwesomeIcon icon={faPlaneArrival} />}
-                    />,
-                  ]}
-                >
-                  <List.Item.Meta
-                    title={student.name}
-                    description={
-                      <div>
-                        <Text type="secondary">Start: {new Date(flight.startTime).toLocaleTimeString()}</Text>
-                        <br />
-                        <Text>Manöver: {flight.maneuvers.join(', ') || 'Keine ausgewählt'}</Text>
-                      </div>
-                    }
-                  />
-                </List.Item>
-              )}
-            />
-          ) : (
-            <Text type="secondary">Keine Schüler sind aktuell im Flug.</Text>
-          )}
-        </Card>
-
+      <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
         <Card
-          title="Nicht fliegende Schüler"
+          size="small"
+          bodyStyle={{ padding: 12 }}
+          title="Schüler"
           extra={(
             <Space orientation="horizontal" size="small" align="center">
               {deleteMode && selectedStudentIds.length > 0 ? (
@@ -276,75 +250,115 @@ const CourseDetail = () => {
           )}
           variant="outlined"
         >
-
-          {notFlyingStudents.length ? (
+          {combinedStudentEntries.length ? (
             <List
-              dataSource={notFlyingStudents}
-              renderItem={(student) => {
+              size="small"
+              dataSource={combinedStudentEntries}
+              renderItem={(entry) => {
+                if (entry.kind === 'active') {
+                  const { student, flight } = entry;
+                  return (
+                    <List.Item
+                      style={{
+                        background: '#1f5f3a',
+                        borderRadius: 8,
+                        paddingInline: 12,
+                        paddingBlock: 6,
+                        marginBottom: 6,
+                      }}
+                      actions={[
+                        <Popconfirm
+                          title="Flug abbrechen?"
+                          okText="Ja"
+                          cancelText="Nein"
+                          onConfirm={() => handleAbortFlight(flight.id!)}
+                        >
+                          <Button danger icon={<FontAwesomeIcon icon={faBan} />} />
+                        </Popconfirm>,
+                        <Button
+                          type="primary"
+                          onClick={() => handleLandFlight(flight.id!, student.id!)}
+                          icon={<FontAwesomeIcon icon={faPlaneArrival} />}
+                        />,
+                      ]}
+                    >
+                      <List.Item.Meta
+                        title={<span style={{ color: '#fff', fontWeight: 600 }}>{student.name}</span>}
+                        description={
+                          <div style={{ color: '#e6f4ea' }}>
+                            Start: {new Date(flight.startTime).toLocaleTimeString()}
+                            <br />
+                            Manöver: {flight.maneuvers.join(', ') || 'Keine ausgewählt'}
+                          </div>
+                        }
+                      />
+                    </List.Item>
+                  );
+                }
+
+                const { student } = entry;
                 const studentId = student.id;
                 const isSelected = studentId ? selectedStudentIds.includes(studentId) : false;
 
                 return (
-                <List.Item
-                  onClick={() => {
-                    if (deleteMode && studentId) {
-                      handleToggleStudentSelection(studentId);
-                    }
-                  }}
-                  style={deleteMode ? {
-                    cursor: 'pointer',
-                    background: isSelected ? '#fff7e6' : undefined,
-                    borderRadius: 8,
-                    paddingInline: 8,
-                  } : undefined}
-                  extra={deleteMode ? (
-                    <Checkbox
-                      checked={isSelected}
-                      onClick={(event) => event.stopPropagation()}
-                      onChange={() => {
-                        if (studentId) {
-                          handleToggleStudentSelection(studentId);
-                        }
-                      }}
+                  <List.Item
+                    onClick={() => {
+                      if (deleteMode && studentId) {
+                        handleToggleStudentSelection(studentId);
+                      }
+                    }}
+                    style={deleteMode ? {
+                      cursor: 'pointer',
+                      background: isSelected ? '#fff7e6' : undefined,
+                      borderRadius: 8,
+                      paddingInline: 8,
+                      paddingBlock: 6,
+                    } : { paddingBlock: 6 }}
+                    extra={deleteMode ? (
+                      <Checkbox
+                        checked={isSelected}
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={() => {
+                          if (studentId) {
+                            handleToggleStudentSelection(studentId);
+                          }
+                        }}
+                      />
+                    ) : undefined}
+                    actions={deleteMode ? [] : [
+                      <Space orientation="horizontal" size="small" align="center">
+                        <Button
+                          icon={<EditOutlined />}
+                          onClick={() => {
+                            setEditStudent({ ...student });
+                            setEditModalVisible(true);
+                          }}
+                        />
+                        <Button
+                          type="primary"
+                          icon={<FontAwesomeIcon icon={faPlaneDeparture} />}
+                          onClick={() => {
+                            setSelectedFlightStudent(student);
+                            setSelectedManeuvers([]);
+                            setFlightDetails(course?.flightDefaults ?? {});
+                            setStartModalVisible(true);
+                          }}
+                        />
+                      </Space>,
+                    ]}
+                  >
+                    <List.Item.Meta
+                      title={`${student.name} (${student.totalFlights ?? 0})`}
+                      description={`${student.glider} — ${student.color}`}
                     />
-                  ) : undefined}
-                  actions={deleteMode ? [] : [
-                    <Space orientation="horizontal" size="small" align="center">
-                      <Button
-                        icon={<EditOutlined />}
-                        onClick={() => {
-                          setEditStudent({ ...student });
-                          setEditModalVisible(true);
-                        }}
-                      />
-                      <Button
-                        type="primary"
-                        icon={<FontAwesomeIcon icon={faPlaneDeparture} />}
-                        onClick={() => {
-                          setSelectedFlightStudent(student);
-                          setSelectedManeuvers([]);
-                          setFlightDetails(course?.flightDefaults ?? {});
-                          setStartModalVisible(true);
-                        }}
-                      />
-                    </Space>,
-                  ]}
-                >
-                  <List.Item.Meta
-                    title={`${student.name} (${student.totalFlights ?? 0})`}
-                    description={`${student.glider} — ${student.color}`}
-                  />
-                </List.Item>
+                  </List.Item>
                 );
               }}
             />
           ) : (
-            <Text type="secondary">Alle Schüler sind derzeit im Flug oder es sind keine Schüler im Kurs.</Text>
+            <Text type="secondary">Es sind keine Schüler im Kurs.</Text>
           )}
         </Card>
-      </Space>
-
-      <Space style={{ width: '100%', justifyContent: 'center', marginTop: 24 }}>
       </Space>
 
       <Modal
@@ -354,7 +368,7 @@ const CourseDetail = () => {
         onOk={handleAddStudent}
         okText="Hinzufügen"
       >
-        <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
+        <Space orientation="vertical" size="small" style={{ width: '100%' }}>
           <Text strong>Wähle vorhandenen Schüler oder erstelle einen neuen.</Text>
           <Select
             options={[

@@ -144,7 +144,7 @@ const CourseHeader = ({ course, prev, next, editable = false, onCourseUpdated }:
   );
 
   return (
-    <Card>
+    <Card size="small" bodyStyle={{ padding: 12 }}>
       <div
         aria-hidden
         style={{

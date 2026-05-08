@@ -26,7 +26,7 @@ const CourseList = () => {
 
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto' }}>
-      <Space orientation="vertical" size="large" style={{ width: '100%' }}>
+      <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
         <Space align="center" style={{ width: '100%', display: 'flex', justifyContent: 'space-between' }}>
           <Typography.Title level={2} style={{ margin: 0 }}>
             Kursliste
@@ -37,14 +37,16 @@ const CourseList = () => {
         </Space>
 
         <List
-          grid={{ gutter: 16, column: 1 }}
+          size="small"
+          grid={{ gutter: 8, column: 1 }}
           dataSource={sortedCourses}
           renderItem={(course) => (
-            <List.Item>
+            <List.Item style={{ paddingBlock: 4 }}>
               <Card
+                size="small"
                 hoverable
                 style={{ width: '100%' }}
-                bodyStyle={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                bodyStyle={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 12 }}
                 onClick={() => navigate(`/course/${course.id}`)}
               >
                 <div>

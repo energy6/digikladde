@@ -13,7 +13,7 @@ const formatDate = (date: string) => {
 
 const CourseTitle = ({course}: {course: Course}) => {
   return (
-    <Space orientation="vertical" align="center" style={{ width: '100%' }}>
+    <Space direction="vertical" size={2} align="center" style={{ width: '100%' }}>
       <Typography.Title level={3} style={{ margin: 0, textAlign: 'center', whiteSpace: 'nowrap' }}>
         {course.name}
       </Typography.Title>

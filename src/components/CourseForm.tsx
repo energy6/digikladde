@@ -40,9 +40,9 @@ const CourseForm = () => {
 
   return (
     <div style={{ maxWidth: 800, margin: '0 auto' }}>
-      <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         <Typography.Title level={2}>{id ? 'Kurs bearbeiten' : 'Kurs erstellen'}</Typography.Title>
-        <Form layout="vertical" onFinish={handleSubmit}>
+        <Form layout="vertical" size="small" onFinish={handleSubmit}>
           <Form.Item label="Name" required>
             <Input value={name} onChange={(e) => setName(e.target.value)} />
           </Form.Item>

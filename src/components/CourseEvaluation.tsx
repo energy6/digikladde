@@ -27,7 +27,7 @@ const renderFlightDetails = (details?: FlightDetails) => {
   return (
     <div>
       {rows.map((row) => (
-        <div key={row}>
+        <div key={row} style={{ lineHeight: 1.25 }}>
           <Text type="secondary">{row}</Text>
         </div>
       ))}
@@ -63,7 +63,7 @@ const CourseEvaluation = () => {
 
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto' }}>
-      <Space orientation="vertical" size="large" style={{ width: '100%' }}>
+      <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
         <CourseHeader
           course={course}
           prev={() => navigate(`/course/${course.id}`)}
@@ -71,11 +71,16 @@ const CourseEvaluation = () => {
           onCourseUpdated={(updatedCourse) => setCourse(updatedCourse)}
         />
 
-        <Card title="Kursauswertung"
+        <Card
+          size="small"
+          bodyStyle={{ padding: 12 }}
+          title="Kursauswertung"
           extra={<Button type="primary" icon={<FontAwesomeIcon icon={faFilePdf} />} onClick={() => generatePDF(Number(id))}/>}
           variant="outlined"
         >
           <List
+            size="small"
+            split={false}
             dataSource={studentsSorted}
             renderItem={(student) => {
               const studentFlights = flights
@@ -83,17 +88,18 @@ const CourseEvaluation = () => {
                 .sort((a, b) => b.startTime.localeCompare(a.startTime));
 
               return (
-                <List.Item>
+                <List.Item style={{ paddingBlock: 4 }}>
                   <div style={{ width: '100%' }}>
                     <Collapse
+                      size="small"
                       items={[
                         {
                           key: String(student.id),
-                          label: `${student.name} - Fluege gesamt: ${student.totalFlights ?? 0}`,
+                          label: `${student.name} (${studentFlights.length ?? 0} ${studentFlights.length === 1 ? 'Flug' : 'Flüge' })`,
                           children: studentFlights.length ? (
-                            <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
+                            <Space orientation="vertical" size="small" style={{ width: '100%' }}>
                               {studentFlights.map((flight) => (
-                                <Card key={flight.id} size="small" variant="outlined">
+                                <Card key={flight.id} size="small" bodyStyle={{ padding: 10 }} variant="outlined">
                                   <Space orientation="vertical" size={2} style={{ width: '100%' }}>
                                     <Text>
                                       Start: {new Date(flight.startTime).toLocaleString()}
