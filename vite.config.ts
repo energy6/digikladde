@@ -10,42 +10,33 @@ const packageJson = JSON.parse(readFileSync(new URL('./package.json', import.met
 
 function getVersionWithGitInfo(): string {
   const baseVersion = packageJson.version ?? '0.0.0'
+  const [major = '0', minor = '0', patchRaw = '0'] = baseVersion.split('.')
+  const patchBase = Number.parseInt(patchRaw, 10)
+  const safePatchBase = Number.isNaN(patchBase) ? 0 : patchBase
 
   try {
-    // Try to get git description
-    const gitDescribe = execSync('git describe --tags --match "v*" 2>/dev/null || echo ""', {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim()
+    const tagsToTry = [`v${baseVersion}`, baseVersion]
 
-    if (!gitDescribe) {
-      // No tags found, count commits since start
-      const commitCount = parseInt(
-        execSync('git rev-list --count HEAD 2>/dev/null || echo "0"', {
+    for (const tagName of tagsToTry) {
+      try {
+        execSync(`git rev-parse -q --verify refs/tags/${tagName}`, {
+          stdio: 'ignore',
+        })
+
+        const commitCountText = execSync(`git rev-list --count ${tagName}..HEAD`, {
           encoding: 'utf-8',
           stdio: ['pipe', 'pipe', 'pipe'],
-        }).trim(),
-        10
-      )
-      return `${baseVersion}+${commitCount}`
-    }
+        }).trim()
+        const commitsSinceTag = Number.parseInt(commitCountText, 10)
+        const safeCommitsSinceTag = Number.isNaN(commitsSinceTag) ? 0 : commitsSinceTag
 
-    // Parse git describe output: v0.1.0-5-gabcd1234
-    const match = gitDescribe.match(/v?([\d.]+)(?:-(\d+)-g[0-9a-f]+)?/)
-    if (match) {
-      const tagVersion = match[1]
-      const commitsSinceTag = match[2] ? parseInt(match[2], 10) : 0
-
-      // If commits since tag, append as patch version
-      if (commitsSinceTag > 0) {
-        const parts = tagVersion.split('.')
-        const patch = parseInt(parts[2] ?? '0', 10)
-        return `${parts[0]}.${parts[1]}.${patch + commitsSinceTag}`
+        return `${major}.${minor}.${safePatchBase + safeCommitsSinceTag}`
+      } catch {
+        // Try next candidate tag.
       }
-
-      return tagVersion
     }
 
+    // If matching release tag is not present, keep package version unchanged.
     return baseVersion
   } catch {
     return baseVersion
