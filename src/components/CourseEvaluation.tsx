@@ -108,7 +108,7 @@ const CourseEvaluation = () => {
                                       Ende: {flight.endTime ? new Date(flight.endTime).toLocaleString() : 'laufend'}
                                     </Text>
                                     <Text>
-                                      Manoever: {flight.maneuvers.join(', ') || 'Keine'}
+                                      Manöver: {flight.maneuvers.join(', ') || 'Keine'}
                                     </Text>
                                     {renderFlightDetails(flight.details)}
                                   </Space>
@@ -116,7 +116,7 @@ const CourseEvaluation = () => {
                               ))}
                             </Space>
                           ) : (
-                            <Text type="secondary">Keine Fluege fuer diesen Schueler im Kurs.</Text>
+                            <Text type="secondary">Keine Flüge für diesen Schüler im Kurs.</Text>
                           ),
                         },
                       ]}

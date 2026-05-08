@@ -57,13 +57,13 @@ function App() {
 
   return (
     <Router>
-      <Layout style={{ minHeight: '100vh' }}>
-        <Header style={{ background: '#0a2239', display: 'flex', alignItems: 'center', padding: '0 24px' }}>
+      <Layout className="app-layout">
+        <Header className="app-header" style={{ background: '#0a2239', display: 'flex', alignItems: 'center', padding: '0 24px' }}>
           <Typography.Title level={3} style={{ color: '#fff', margin: 0 }}>
             DigiKladde
           </Typography.Title>
         </Header>
-        <Content style={{ padding: 24, maxWidth: 1200, margin: '0 auto', width: '100%' }}>
+        <Content className="app-content" style={{ padding: 24, maxWidth: 1200, margin: '0 auto', width: '100%' }}>
           <Routes>
             <Route path="/" element={<CourseList />} />
             <Route path="/course/new" element={<CourseForm />} />
@@ -74,7 +74,15 @@ function App() {
             <Route path="/course/:id/flight" element={<FlightRecorder />} />
           </Routes>
         </Content>
-        <Footer style={{ padding: '8px 24px', textAlign: 'center', background: '#0a2239' }}>
+        <Footer
+          className="app-footer"
+          style={{
+            padding: '8px 24px',
+            paddingBottom: 'max(8px, env(safe-area-inset-bottom))',
+            textAlign: 'center',
+            background: '#0a2239',
+          }}
+        >
           <Space size="middle" align="center">
             <Typography.Text type="secondary" style={{ color: '#818181' }}>
               Version {appVersion} | {appTimestampLocal}
@@ -88,7 +96,7 @@ function App() {
             style={{
               position: 'fixed',
               right: 16,
-              bottom: 16,
+              bottom: 'calc(16px + env(safe-area-inset-bottom))',
               zIndex: 1000,
               background: '#ffffff',
               border: '1px solid #d9d9d9',

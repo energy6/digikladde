@@ -1,11 +1,48 @@
+html,
+body,
+#root {
+  height: 100%;
+}
+
 body {
   margin: 0;
   font-family: Inter, system-ui, sans-serif;
   background: #f0f2f5;
+  overflow: hidden;
 }
 
 #root {
   min-height: 100vh;
+}
+
+.app-layout {
+  height: 100vh;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+.app-header,
+.app-footer {
+  flex: 0 0 auto;
+}
+
+.app-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+@supports (min-height: 100dvh) {
+  #root {
+    min-height: 100dvh;
+  }
+
+  .app-layout {
+    height: 100dvh;
+    min-height: 100dvh;
+  }
 }
 
 a {
