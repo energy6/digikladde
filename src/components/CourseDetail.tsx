@@ -274,6 +274,8 @@ const CourseDetail = () => {
     return opts;
   }, [flightDetails.teacher, course]);
 
+  const maneuversEnabled = course?.courseType !== 'Grundkurs';
+
   const handleAddStudent = async () => {
     if (!course || !id) return;
 
@@ -300,7 +302,7 @@ const CourseDetail = () => {
     await db.flights.add({
       courseId: Number(id),
       studentId: selectedFlightStudent.id,
-      maneuvers: selectedManeuvers,
+      maneuvers: maneuversEnabled ? selectedManeuvers : [],
       details: flightDetails,
       startTime: new Date().toISOString(),
     });
@@ -626,8 +628,12 @@ const CourseDetail = () => {
                         description={
                           <div style={{ color: '#e6f4ea' }}>
                             Start: {new Date(flight.startTime).toLocaleTimeString()}
-                            <br />
-                            Manöver: {flight.maneuvers.join(', ') || 'Keine ausgewählt'}
+                            {maneuversEnabled ? (
+                              <>
+                                <br />
+                                Manöver: {flight.maneuvers.join(', ') || 'Keine ausgewählt'}
+                              </>
+                            ) : null}
                           </div>
                         }
                       />
@@ -928,14 +934,16 @@ const CourseDetail = () => {
               </Form.Item>
             </>
           )}
-          <Form.Item label="Manöver">
-            <Checkbox.Group
-              options={maneuvers}
-              value={selectedManeuvers}
-              onChange={(values) => setSelectedManeuvers([...values])}
-              style={{ width: '100%' }}
-            />
-          </Form.Item>
+          {maneuversEnabled ? (
+            <Form.Item label="Manöver">
+              <Checkbox.Group
+                options={maneuvers}
+                value={selectedManeuvers}
+                onChange={(values) => setSelectedManeuvers([...values])}
+                style={{ width: '100%' }}
+              />
+            </Form.Item>
+          ) : null}
         </Form>
       </Modal>
 

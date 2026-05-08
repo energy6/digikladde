@@ -47,8 +47,7 @@ const getTableColumns = (courseType: CourseType): TableColumn[] => {
       { key: 'startTime', label: 'Start', width: 14 },
       { key: 'landingTime', label: 'Landung', width: 14 },
       { key: 'duration', label: 'Dauer', width: 12 },
-      { key: 'terrainTeacher', label: 'Gelände / Lehrer', width: 58 },
-      { key: 'maneuvers', label: 'Manöver', width: 80 },
+      { key: 'terrainTeacher', label: 'Gelände / Lehrer', width: 138 },
     ];
   }
 
@@ -111,6 +110,7 @@ const getFlightCellValue = (flight: Flight, rowNo: number, courseType: CourseTyp
   if (courseType === 'Grundkurs') {
     values.startInfo = '-';
     values.landInfo = '-';
+    values.maneuvers = '-';
   }
 
   if (courseType === 'Windenkurs') {

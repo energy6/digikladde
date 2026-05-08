@@ -107,9 +107,11 @@ const CourseEvaluation = () => {
                                     <Text>
                                       Ende: {flight.endTime ? new Date(flight.endTime).toLocaleString() : 'laufend'}
                                     </Text>
-                                    <Text>
-                                      Manöver: {flight.maneuvers.join(', ') || 'Keine'}
-                                    </Text>
+                                    {course.courseType !== 'Grundkurs' ? (
+                                      <Text>
+                                        Manöver: {flight.maneuvers.join(', ') || 'Keine'}
+                                      </Text>
+                                    ) : null}
                                     {renderFlightDetails(flight.details)}
                                   </Space>
                                 </Card>

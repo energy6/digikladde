@@ -51,4 +51,5 @@ export const maneuvers = [
   'Rollen',
   'Nicken',
   'B-Stall',
+  'Prüfungssimulation',
 ];

@@ -12,6 +12,8 @@ const FlightRecorder = () => {
   const [selectedManeuvers, setSelectedManeuvers] = useState<string[]>([]);
   const [currentFlight, setCurrentFlight] = useState<Flight | null>(null);
 
+  const maneuversEnabled = course?.courseType !== 'Grundkurs';
+
   useEffect(() => {
     const loadCourse = async () => {
       if (id) {
@@ -27,7 +29,7 @@ const FlightRecorder = () => {
     const flight: Flight = {
       courseId: Number(id),
       studentId: selectedStudent.id!,
-      maneuvers: selectedManeuvers,
+      maneuvers: maneuversEnabled ? selectedManeuvers : [],
       startTime: new Date().toISOString(),
     };
     setCurrentFlight(flight);
@@ -69,20 +71,24 @@ const FlightRecorder = () => {
               <option key={student.id} value={student.id}>{student.name}</option>
             ))}
           </select>
-          <h3>Manöver auswählen</h3>
-          <div className="grid grid-cols-3 gap-2 mb-4">
-            {maneuvers.map(maneuver => (
-              <label key={maneuver} className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={selectedManeuvers.includes(maneuver)}
-                  onChange={() => toggleManeuver(maneuver)}
-                  className="mr-2"
-                />
-                {maneuver}
-              </label>
-            ))}
-          </div>
+          {maneuversEnabled ? (
+            <>
+              <h3>Manöver auswählen</h3>
+              <div className="grid grid-cols-3 gap-2 mb-4">
+                {maneuvers.map(maneuver => (
+                  <label key={maneuver} className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={selectedManeuvers.includes(maneuver)}
+                      onChange={() => toggleManeuver(maneuver)}
+                      className="mr-2"
+                    />
+                    {maneuver}
+                  </label>
+                ))}
+              </div>
+            </>
+          ) : null}
           <button
             onClick={startFlight}
             disabled={!selectedStudent}
