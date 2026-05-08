@@ -1,5 +1,5 @@
 import { EditOutlined, PlusOutlined } from '@ant-design/icons';
-import { faBan, faPlaneArrival, faPlaneDeparture, faTrashCan } from '@fortawesome/free-solid-svg-icons';
+import { faBackwardStep, faBan, faForwardStep, faPlaneArrival, faPlaneDeparture, faTrashCan } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { Button, Card, Checkbox, Form, Input, List, Modal, Popconfirm, Select, Space, Typography } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
@@ -10,6 +10,7 @@ import { maneuvers } from '../models/types';
 import CourseHeader from './CourseHeader';
 
 const { Text } = Typography;
+const LANDING_PENDING_MS = 5 * 60 * 1000;
 
 const CourseDetail = () => {
   const { id } = useParams();
@@ -29,12 +30,70 @@ const CourseDetail = () => {
   const [editStudent, setEditStudent] = useState<Student | null>(null);
   const [deleteMode, setDeleteMode] = useState(false);
   const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
+  const [nowTs, setNowTs] = useState(Date.now());
+
+  const isPendingLanding = (flight: Flight) => Boolean(flight.landingPendingUntil && !flight.landingFinalizedAt);
+
+  const formatRemaining = (pendingUntil: string) => {
+    const remainingMs = Math.max(0, Date.parse(pendingUntil) - nowTs);
+    const minutes = Math.floor(remainingMs / 60000);
+    const seconds = Math.floor((remainingMs % 60000) / 1000);
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+  };
+
+  const finalizePendingFlights = async () => {
+    if (!id) return false;
+    const courseId = Number(id);
+    const courseFlights = await db.flights.where('courseId').equals(courseId).toArray();
+    const pendingToFinalize = courseFlights.filter((flight) => {
+      if (!flight.id || !flight.landingPendingUntil || flight.landingFinalizedAt) return false;
+      return Date.parse(flight.landingPendingUntil) <= Date.now();
+    });
+
+    if (!pendingToFinalize.length) return false;
+
+    for (const pendingFlight of pendingToFinalize) {
+      if (!pendingFlight.id) continue;
+      await db.transaction('rw', db.flights, db.students, db.courses, async () => {
+        const freshFlight = await db.flights.get(pendingFlight.id!);
+        if (!freshFlight || !freshFlight.landingPendingUntil || freshFlight.landingFinalizedAt) return;
+        if (Date.parse(freshFlight.landingPendingUntil) > Date.now()) return;
+
+        const finalizedAt = new Date().toISOString();
+        const finalizedEndTime = freshFlight.endTime ?? freshFlight.landingMarkedAt ?? finalizedAt;
+
+        await db.flights.update(freshFlight.id!, {
+          endTime: finalizedEndTime,
+          landingFinalizedAt: finalizedAt,
+          landingPendingUntil: undefined,
+        });
+
+        const student = await db.students.get(freshFlight.studentId);
+        if (!student || !student.id) return;
+
+        const newTotal = (student.totalFlights ?? 0) + 1;
+        await db.students.update(student.id, { totalFlights: newTotal });
+
+        const currentCourse = await db.courses.get(freshFlight.courseId);
+        if (!currentCourse) return;
+
+        const updatedStudents = currentCourse.students.map((s) =>
+          s.id === student.id ? { ...s, totalFlights: newTotal } : s,
+        );
+        await db.courses.update(freshFlight.courseId, { students: updatedStudents });
+      });
+    }
+
+    return true;
+  };
 
   useEffect(() => {
     let cancelled = false;
 
     const load = async () => {
       if (!id) return;
+
+      const hadFinalizedFlights = await finalizePendingFlights();
 
       const [currentCourse, students, courseFlights] = await Promise.all([
         db.courses.get(Number(id)),
@@ -47,12 +106,48 @@ const CourseDetail = () => {
       setCourse(currentCourse || null);
       setAllStudents(students);
       setFlights(courseFlights);
+
+      if (hadFinalizedFlights && !cancelled) {
+        const [updatedCourse, updatedStudents, updatedFlights] = await Promise.all([
+          db.courses.get(Number(id)),
+          db.students.toArray(),
+          db.flights.where('courseId').equals(Number(id)).toArray(),
+        ]);
+        setCourse(updatedCourse || null);
+        setAllStudents(updatedStudents);
+        setFlights(updatedFlights);
+      }
     };
 
     void load();
 
     return () => {
       cancelled = true;
+    };
+  }, [id]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setNowTs(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      void (async () => {
+        const didFinalize = await finalizePendingFlights();
+        if (didFinalize) {
+          await refresh();
+        }
+      })();
+    }, 5000);
+
+    return () => {
+      window.clearInterval(intervalId);
     };
   }, [id]);
 
@@ -69,7 +164,20 @@ const CourseDetail = () => {
   };
 
   const activeFlights = useMemo(
-    () => flights.filter((flight) => !flight.endTime).sort((a, b) => b.startTime.localeCompare(a.startTime)),
+    () => flights
+      .filter((flight) => !flight.endTime && !isPendingLanding(flight))
+      .sort((a, b) => b.startTime.localeCompare(a.startTime)),
+    [flights],
+  );
+
+  const pendingFlights = useMemo(
+    () => flights
+      .filter((flight) => !flight.endTime && isPendingLanding(flight))
+      .sort((a, b) => {
+        const aPending = Date.parse(a.landingPendingUntil ?? a.startTime);
+        const bPending = Date.parse(b.landingPendingUntil ?? b.startTime);
+        return aPending - bPending;
+      }),
     [flights],
   );
 
@@ -83,16 +191,33 @@ const CourseDetail = () => {
       .filter((entry): entry is { flight: Flight; student: Student } => entry !== null);
   }, [activeFlights, course]);
 
+  const pendingEntries = useMemo(() => {
+    if (!course) return [];
+    return pendingFlights
+      .map((flight) => {
+        const student = course.students.find((s) => s.id === flight.studentId);
+        return student ? { flight, student } : null;
+      })
+      .filter((entry): entry is { flight: Flight; student: Student } => entry !== null);
+  }, [pendingFlights, course]);
+
   const notFlyingStudents = useMemo(() => {
     if (!course) return [];
     return course.students
       .filter((student) => !activeFlights.some((flight) => flight.studentId === student.id))
+      .filter((student) => !pendingFlights.some((flight) => flight.studentId === student.id))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [activeFlights, course]);
+  }, [activeFlights, pendingFlights, course]);
 
   const combinedStudentEntries = useMemo(() => {
     const active = activeEntries.map((entry) => ({
       kind: 'active' as const,
+      student: entry.student,
+      flight: entry.flight,
+    }));
+
+    const pending = pendingEntries.map((entry) => ({
+      kind: 'pending' as const,
       student: entry.student,
       flight: entry.flight,
     }));
@@ -102,8 +227,8 @@ const CourseDetail = () => {
       student,
     }));
 
-    return [...active, ...notFlying];
-  }, [activeEntries, notFlyingStudents]);
+    return [...active, ...pending, ...notFlying];
+  }, [activeEntries, pendingEntries, notFlyingStudents]);
 
   const availableExistingStudents = useMemo(() => {
     if (!course) return [];
@@ -178,19 +303,53 @@ const CourseDetail = () => {
     await refresh();
   };
 
-  const handleLandFlight = async (flightId: number, studentId: number) => {
-    await db.flights.update(flightId, { endTime: new Date().toISOString() });
-    const student = await db.students.get(studentId);
-    if (student) {
+  const handleLandFlight = async (flightId: number) => {
+    const now = Date.now();
+    await db.flights.update(flightId, {
+      landingMarkedAt: new Date(now).toISOString(),
+      landingPendingUntil: new Date(now + LANDING_PENDING_MS).toISOString(),
+      landingFinalizedAt: undefined,
+    });
+    await refresh();
+  };
+
+  const handleResumeFlight = async (flightId: number) => {
+    await db.flights.update(flightId, {
+      landingMarkedAt: undefined,
+      landingPendingUntil: undefined,
+      landingFinalizedAt: undefined,
+    });
+    await refresh();
+  };
+
+  const handleTerminateFlight = async (flightId: number) => {
+    await db.transaction('rw', db.flights, db.students, db.courses, async () => {
+      const flight = await db.flights.get(flightId);
+      if (!flight || !flight.id || flight.landingFinalizedAt) return;
+
+      const finalizedAt = new Date().toISOString();
+      const finalizedEndTime = flight.endTime ?? flight.landingMarkedAt ?? finalizedAt;
+
+      await db.flights.update(flight.id, {
+        endTime: finalizedEndTime,
+        landingFinalizedAt: finalizedAt,
+        landingPendingUntil: undefined,
+      });
+
+      const student = await db.students.get(flight.studentId);
+      if (!student || !student.id) return;
+
       const newTotal = (student.totalFlights ?? 0) + 1;
-      await db.students.update(studentId, { totalFlights: newTotal });
-      if (course && id) {
-        const updatedStudents = course.students.map((s) =>
-          s.id === studentId ? { ...s, totalFlights: newTotal } : s,
-        );
-        await db.courses.update(Number(id), { students: updatedStudents });
-      }
-    }
+      await db.students.update(student.id, { totalFlights: newTotal });
+
+      const currentCourse = await db.courses.get(flight.courseId);
+      if (!currentCourse) return;
+
+      const updatedStudents = currentCourse.students.map((s) =>
+        s.id === student.id ? { ...s, totalFlights: newTotal } : s,
+      );
+      await db.courses.update(flight.courseId, { students: updatedStudents });
+    });
     await refresh();
   };
 
@@ -303,7 +462,7 @@ const CourseDetail = () => {
                         </Popconfirm>,
                         <Button
                           type="primary"
-                          onClick={() => handleLandFlight(flight.id!, student.id!)}
+                          onClick={() => handleLandFlight(flight.id!)}
                           icon={<FontAwesomeIcon icon={faPlaneArrival} />}
                         />,
                       ]}
@@ -315,6 +474,42 @@ const CourseDetail = () => {
                             Start: {new Date(flight.startTime).toLocaleTimeString()}
                             <br />
                             Manöver: {flight.maneuvers.join(', ') || 'Keine ausgewählt'}
+                          </div>
+                        }
+                      />
+                    </List.Item>
+                  );
+                }
+
+                if (entry.kind === 'pending') {
+                  const { student, flight } = entry;
+                  return (
+                    <List.Item
+                      style={{
+                        background: '#1765ad',
+                        borderRadius: 8,
+                        paddingInline: 12,
+                        paddingBlock: 6,
+                        marginBottom: 6,
+                      }}
+                      actions={[
+                        <Button
+                          onClick={() => handleResumeFlight(flight.id!)}
+                          icon={<FontAwesomeIcon icon={faBackwardStep} />}
+                        />,
+                        <Button
+                          onClick={() => handleTerminateFlight(flight.id!)}
+                          icon={<FontAwesomeIcon icon={faForwardStep} />}
+                        />,
+                      ]}
+                    >
+                      <List.Item.Meta
+                        title={<span style={{ color: '#fff', fontWeight: 600 }}>{student.name}</span>}
+                        description={
+                          <div style={{ color: '#deeeff' }}>
+                            Landung markiert: {flight.landingMarkedAt ? new Date(flight.landingMarkedAt).toLocaleTimeString() : '-'}
+                            <br />
+                            Final in: {flight.landingPendingUntil ? formatRemaining(flight.landingPendingUntil) : '0:00'}
                           </div>
                         }
                       />

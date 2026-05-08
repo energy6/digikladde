@@ -37,6 +37,9 @@ export interface Flight {
   maneuvers: string[];
   details?: FlightDetails;
   startTime: string;
+  landingMarkedAt?: string;
+  landingPendingUntil?: string;
+  landingFinalizedAt?: string;
   endTime?: string;
 }
 
