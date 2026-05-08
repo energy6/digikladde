@@ -61,15 +61,6 @@ const CourseHeader = ({ course, prev, next, editable = false, onCourseUpdated }:
   }, [course.name, prev, next]);
 
   useEffect(() => {
-    setDraft({
-      name: course.name,
-      courseType: course.courseType,
-      startDate: course.startDate,
-      endDate: course.endDate,
-    });
-  }, [course]);
-
-  useEffect(() => {
     return () => {
       if (longPressTimerRef.current !== null) {
         window.clearTimeout(longPressTimerRef.current);

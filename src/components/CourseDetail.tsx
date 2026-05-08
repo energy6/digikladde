@@ -30,17 +30,43 @@ const CourseDetail = () => {
   const [deleteMode, setDeleteMode] = useState(false);
   const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      if (!id) return;
+
+      const [currentCourse, students, courseFlights] = await Promise.all([
+        db.courses.get(Number(id)),
+        db.students.toArray(),
+        db.flights.where('courseId').equals(Number(id)).toArray(),
+      ]);
+
+      if (cancelled) return;
+
+      setCourse(currentCourse || null);
+      setAllStudents(students);
+      setFlights(courseFlights);
+    };
+
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
   const refresh = async () => {
     if (!id) return;
-    const currentCourse = await db.courses.get(Number(id));
+    const [currentCourse, students, courseFlights] = await Promise.all([
+      db.courses.get(Number(id)),
+      db.students.toArray(),
+      db.flights.where('courseId').equals(Number(id)).toArray(),
+    ]);
     setCourse(currentCourse || null);
-    setAllStudents(await db.students.toArray());
-    setFlights(await db.flights.where('courseId').equals(Number(id)).toArray());
+    setAllStudents(students);
+    setFlights(courseFlights);
   };
-
-  useEffect(() => {
-    refresh();
-  }, [id]);
 
   const activeFlights = useMemo(
     () => flights.filter((flight) => !flight.endTime).sort((a, b) => b.startTime.localeCompare(a.startTime)),

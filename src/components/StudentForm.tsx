@@ -12,7 +12,7 @@ const StudentForm = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const student: Student = { name, glider, color };
+    const student: Student = { name, glider, color, totalFlights: 0 };
     const studentId = await db.students.add(student);
     if (id) {
       const course = await db.courses.get(Number(id));
