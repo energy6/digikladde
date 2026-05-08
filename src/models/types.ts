@@ -16,6 +16,7 @@ export interface Student {
   name: string;
   glider: string;
   color: string;
+  totalFlights: number;
 }
 
 export interface Flight {
