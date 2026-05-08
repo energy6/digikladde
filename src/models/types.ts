@@ -9,6 +9,7 @@ export interface Course {
   startDate: string;
   endDate: string;
   students: Student[];
+  flightDefaults?: FlightDetails;
 }
 
 export interface Student {
@@ -19,11 +20,22 @@ export interface Student {
   totalFlights: number;
 }
 
+export interface FlightDetails {
+  terrain?: string;       // Grundkurs, Windenkurs
+  teacher?: string;       // Grundkurs, Windenkurs
+  startLeiter?: string;   // Windenkurs
+  startPlace?: string;    // Höhenkurs
+  startTeacher?: string;  // Höhenkurs
+  landPlace?: string;     // Höhenkurs
+  landTeacher?: string;   // Höhenkurs
+}
+
 export interface Flight {
   id?: number;
   courseId: number;
   studentId: number;
   maneuvers: string[];
+  details?: FlightDetails;
   startTime: string;
   endTime?: string;
 }
@@ -32,5 +44,7 @@ export const maneuvers = [
   'Ohren anlegen',
   'Klapper',
   'Acht',
-  // Add more as needed
+  'Rollen',
+  'Nicken',
+  'B-Stall',
 ];

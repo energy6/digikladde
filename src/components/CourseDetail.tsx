@@ -1,11 +1,11 @@
 import { EditOutlined, FilePdfOutlined, LeftOutlined, PlusOutlined } from '@ant-design/icons';
-import { faPlaneDeparture } from '@fortawesome/free-solid-svg-icons';
+import { faBan, faPlaneArrival, faPlaneDeparture, faTrashCan } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { Button, Card, Checkbox, Form, List, Modal, Select, Space, Typography } from 'antd';
+import { Button, Card, Checkbox, Form, Input, List, Modal, Popconfirm, Select, Space, Typography } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { db } from '../db/database';
-import type { Course, Flight, Student } from '../models/types';
+import type { Course, Flight, FlightDetails, Student } from '../models/types';
 import { maneuvers } from '../models/types';
 import { generatePDF } from '../utils/pdfExport';
 
@@ -24,8 +24,11 @@ const CourseDetail = () => {
   const [newStudent, setNewStudent] = useState({ name: '', glider: '', color: '', totalFlights: 0 });
   const [selectedFlightStudent, setSelectedFlightStudent] = useState<Student | null>(null);
   const [selectedManeuvers, setSelectedManeuvers] = useState<string[]>([]);
+  const [flightDetails, setFlightDetails] = useState<FlightDetails>({});
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editStudent, setEditStudent] = useState<Student | null>(null);
+  const [deleteMode, setDeleteMode] = useState(false);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
 
   const refresh = async () => {
     if (!id) return;
@@ -66,6 +69,19 @@ const CourseDetail = () => {
     return allStudents.filter((student) => !course.students.some((courseStudent) => courseStudent.id === student.id));
   }, [allStudents, course]);
 
+  const startLeiterOptions = useMemo(() => {
+    const opts: { label: string; value: string }[] = [];
+    if (flightDetails.teacher) opts.push({ label: `${flightDetails.teacher} (Lehrer)`, value: flightDetails.teacher });
+    if (course) {
+      course.students.forEach((s) => {
+        if (!opts.some((o) => o.value === s.name)) {
+          opts.push({ label: s.name, value: s.name });
+        }
+      });
+    }
+    return opts;
+  }, [flightDetails.teacher, course]);
+
   const handleAddStudent = async () => {
     if (!course || !id) return;
 
@@ -93,11 +109,14 @@ const CourseDetail = () => {
       courseId: Number(id),
       studentId: selectedFlightStudent.id!,
       maneuvers: selectedManeuvers,
+      details: flightDetails,
       startTime: new Date().toISOString(),
     });
+    await db.courses.update(Number(id), { flightDefaults: flightDetails });
     setStartModalVisible(false);
     setSelectedFlightStudent(null);
     setSelectedManeuvers([]);
+    setFlightDetails({});
     refresh();
   };
 
@@ -134,6 +153,38 @@ const CourseDetail = () => {
     refresh();
   };
 
+  const handleAbortFlight = async (flightId: number) => {
+    await db.flights.delete(flightId);
+    refresh();
+  };
+
+  const handleToggleDeleteMode = () => {
+    if (deleteMode) {
+      setDeleteMode(false);
+      setSelectedStudentIds([]);
+      return;
+    }
+    setDeleteMode(true);
+    setSelectedStudentIds([]);
+  };
+
+  const handleToggleStudentSelection = (studentId: number) => {
+    setSelectedStudentIds((current) => (
+      current.includes(studentId)
+        ? current.filter((idValue) => idValue !== studentId)
+        : [...current, studentId]
+    ));
+  };
+
+  const handleDeleteSelectedStudents = async () => {
+    if (!course || !id || selectedStudentIds.length === 0) return;
+    const updatedStudents = course.students.filter((student) => !selectedStudentIds.includes(student.id ?? -1));
+    await db.courses.update(Number(id), { students: updatedStudents });
+    setDeleteMode(false);
+    setSelectedStudentIds([]);
+    refresh();
+  };
+
   if (!course) {
     return <Text>Lade Kursdaten…</Text>;
   }
@@ -156,24 +207,34 @@ const CourseDetail = () => {
             <Button key="pdf" icon={<FilePdfOutlined />} onClick={() => generatePDF(Number(id))}>
               Kurs PDF
             </Button>
-            <Button key="add" type="primary" icon={<PlusOutlined />} onClick={() => setAddModalVisible(true)}>
-              Schüler aufnehmen
-            </Button>
           </Space>
         </div>
       </Card>
 
-      <Space direction="vertical" size="large" style={{ width: '100%' }}>
-        <Card title="Aktive Schüler im Flug" bordered>
+      <Space orientation="vertical" size="large" style={{ width: '100%' }}>
+        <Card title="Aktive Schüler im Flug" variant="outlined">
           {activeEntries.length ? (
             <List
               dataSource={activeEntries}
               renderItem={({ flight, student }) => (
                 <List.Item
                   actions={[
-                    <Button type="primary" danger onClick={() => handleLandFlight(flight.id!, student.id!)}>
-                      Gelandet
-                    </Button>,
+                    <Popconfirm
+                      title="Flug abbrechen?"
+                      okText="Ja"
+                      cancelText="Nein"
+                      onConfirm={() => handleAbortFlight(flight.id!)}
+                    >
+                      <Button
+                        danger
+                        icon={<FontAwesomeIcon icon={faBan} />}
+                      />
+                    </Popconfirm>,
+                    <Button
+                      type="primary"
+                      onClick={() => handleLandFlight(flight.id!, student.id!)}
+                      icon={<FontAwesomeIcon icon={faPlaneArrival} />}
+                    />,
                   ]}
                 >
                   <List.Item.Meta
@@ -194,13 +255,72 @@ const CourseDetail = () => {
           )}
         </Card>
 
-        <Card title="Nicht fliegende Schüler" bordered>
+        <Card
+          title="Nicht fliegende Schüler"
+          extra={(
+            <Space orientation="horizontal" size="small" align="center">
+              {deleteMode && selectedStudentIds.length > 0 ? (
+                <Popconfirm
+                  title="Markierte Schüler entfernen?"
+                  description={`Es werden ${selectedStudentIds.length} Schüler aus diesem Kurs entfernt.`}
+                  okText="Entfernen"
+                  cancelText="Abbrechen"
+                  onConfirm={handleDeleteSelectedStudents}
+                >
+                  <Button key="delete-confirm" danger type="primary" icon={<FontAwesomeIcon icon={faTrashCan} />} />
+                </Popconfirm>
+              ) : (
+                <Button
+                  key="delete-mode"
+                  type={deleteMode ? 'primary' : 'default'}
+                  icon={<FontAwesomeIcon icon={faTrashCan} />}
+                  onClick={handleToggleDeleteMode}
+                />
+              )}
+              <Button
+                key="add"
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => setAddModalVisible(true)}
+                disabled={deleteMode}
+              />
+            </Space>
+          )}
+          variant="outlined"
+        >
+
           {notFlyingStudents.length ? (
             <List
               dataSource={notFlyingStudents}
-              renderItem={(student) => (
+              renderItem={(student) => {
+                const studentId = student.id;
+                const isSelected = studentId ? selectedStudentIds.includes(studentId) : false;
+
+                return (
                 <List.Item
-                  actions={[
+                  onClick={() => {
+                    if (deleteMode && studentId) {
+                      handleToggleStudentSelection(studentId);
+                    }
+                  }}
+                  style={deleteMode ? {
+                    cursor: 'pointer',
+                    background: isSelected ? '#fff7e6' : undefined,
+                    borderRadius: 8,
+                    paddingInline: 8,
+                  } : undefined}
+                  extra={deleteMode ? (
+                    <Checkbox
+                      checked={isSelected}
+                      onClick={(event) => event.stopPropagation()}
+                      onChange={() => {
+                        if (studentId) {
+                          handleToggleStudentSelection(studentId);
+                        }
+                      }}
+                    />
+                  ) : undefined}
+                  actions={deleteMode ? [] : [
                     <Space orientation="horizontal" size="small" align="center">
                       <Button
                         icon={<EditOutlined />}
@@ -215,6 +335,7 @@ const CourseDetail = () => {
                         onClick={() => {
                           setSelectedFlightStudent(student);
                           setSelectedManeuvers([]);
+                          setFlightDetails(course?.flightDefaults ?? {});
                           setStartModalVisible(true);
                         }}
                       />
@@ -226,12 +347,16 @@ const CourseDetail = () => {
                     description={`${student.glider} — ${student.color}`}
                   />
                 </List.Item>
-              )}
+                );
+              }}
             />
           ) : (
             <Text type="secondary">Alle Schüler sind derzeit im Flug oder es sind keine Schüler im Kurs.</Text>
           )}
         </Card>
+      </Space>
+
+      <Space style={{ width: '100%', justifyContent: 'center', marginTop: 24 }}>
       </Space>
 
       <Modal
@@ -241,7 +366,7 @@ const CourseDetail = () => {
         onOk={handleAddStudent}
         okText="Hinzufügen"
       >
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
           <Text strong>Wähle vorhandenen Schüler oder erstelle einen neuen.</Text>
           <Select
             options={[
@@ -350,12 +475,73 @@ const CourseDetail = () => {
         onOk={handleStartFlight}
         okText="Starten"
       >
-        <Checkbox.Group
-          options={maneuvers}
-          value={selectedManeuvers}
-          onChange={(values) => setSelectedManeuvers(values as string[])}
-          style={{ width: '100%' }}
-        />
+        <Form layout="vertical">
+          {(course.courseType === 'Grundkurs' || course.courseType === 'Windenkurs') && (
+            <>
+              <Form.Item label="Gelände">
+                <Input
+                  value={flightDetails.terrain ?? ''}
+                  onChange={(e) => setFlightDetails({ ...flightDetails, terrain: e.target.value })}
+                />
+              </Form.Item>
+              <Form.Item label="Lehrer">
+                <Input
+                  value={flightDetails.teacher ?? ''}
+                  onChange={(e) => setFlightDetails({ ...flightDetails, teacher: e.target.value })}
+                />
+              </Form.Item>
+            </>
+          )}
+          {course.courseType === 'Windenkurs' && (
+            <Form.Item label="Startleiter">
+              <Select
+                showSearch
+                allowClear
+                placeholder="Schüler oder Lehrer wählen…"
+                options={startLeiterOptions}
+                value={flightDetails.startLeiter ?? undefined}
+                onChange={(value) => setFlightDetails({ ...flightDetails, startLeiter: value })}
+                style={{ width: '100%' }}
+              />
+            </Form.Item>
+          )}
+          {course.courseType === 'Höhenkurs' && (
+            <>
+              <Form.Item label="Startplatz">
+                <Input
+                  value={flightDetails.startPlace ?? ''}
+                  onChange={(e) => setFlightDetails({ ...flightDetails, startPlace: e.target.value })}
+                />
+              </Form.Item>
+              <Form.Item label="Lehrer am Start">
+                <Input
+                  value={flightDetails.startTeacher ?? ''}
+                  onChange={(e) => setFlightDetails({ ...flightDetails, startTeacher: e.target.value })}
+                />
+              </Form.Item>
+              <Form.Item label="Landeplatz">
+                <Input
+                  value={flightDetails.landPlace ?? ''}
+                  onChange={(e) => setFlightDetails({ ...flightDetails, landPlace: e.target.value })}
+                />
+              </Form.Item>
+              <Form.Item label="Lehrer am Landeplatz">
+                <Input
+                  value={flightDetails.landTeacher ?? ''}
+                  onChange={(e) => setFlightDetails({ ...flightDetails, landTeacher: e.target.value })}
+                />
+              </Form.Item>
+            </>
+          )}
+          <Form.Item label="Manöver">
+            <Checkbox.Group
+              options={maneuvers}
+              value={selectedManeuvers}
+              onChange={(values) => setSelectedManeuvers(values as string[])}
+              style={{ width: '100%' }}
+            />
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
   );
