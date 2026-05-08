@@ -1,3 +1,4 @@
+import { faSync } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { Button, Layout, Space, Typography } from 'antd';
 import { useRef } from 'react';
@@ -9,12 +10,18 @@ import CourseForm from './components/CourseForm';
 import CourseList from './components/CourseList';
 import FlightRecorder from './components/FlightRecorder';
 import StudentForm from './components/StudentForm';
-import { faSync } from '@fortawesome/free-solid-svg-icons';
 
 const { Header, Content, Footer } = Layout;
 
 const appVersion = __APP_VERSION__;
-const appTimestamp = __BUILD_TIMESTAMP__;
+const appTimestampUtc = __BUILD_TIMESTAMP_UTC__;
+const appBuildDate = new Date(appTimestampUtc);
+const appTimestampLocal = Number.isNaN(appBuildDate.getTime())
+  ? appTimestampUtc
+  : new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    }).format(appBuildDate);
 const Router = import.meta.env.BASE_URL === '/' ? BrowserRouter : HashRouter;
 
 function App() {
@@ -70,7 +77,7 @@ function App() {
         <Footer style={{ padding: '8px 24px', textAlign: 'center', background: '#0a2239' }}>
           <Space size="middle" align="center">
             <Typography.Text type="secondary" style={{ color: '#818181' }}>
-              Version {appVersion} | {appTimestamp}
+              Version {appVersion} | {appTimestampLocal}
             </Typography.Text>
             <Button type="link" size="small" icon={<FontAwesomeIcon icon={faSync} />} onClick={() => void handleCheckForUpdates()}/>
           </Space>

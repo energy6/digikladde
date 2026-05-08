@@ -2,4 +2,4 @@
 /// <reference types="vite-plugin-pwa/client" />
 
 declare const __APP_VERSION__: string;
-declare const __BUILD_TIMESTAMP__: string;
+declare const __BUILD_TIMESTAMP_UTC__: string;

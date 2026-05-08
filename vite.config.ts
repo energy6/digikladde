@@ -44,7 +44,7 @@ function getVersionWithGitInfo(): string {
 }
 
 const appVersion = getVersionWithGitInfo()
-const buildTimestamp = new Date().toLocaleString('de-DE')
+const buildTimestampUtc = new Date().toISOString()
 const repositoryName = process.env.GITHUB_REPOSITORY?.split('/')[1]
 const base = process.env.GITHUB_ACTIONS === 'true' && repositoryName ? `/${repositoryName}/` : '/'
 
@@ -53,7 +53,7 @@ export default defineConfig({
   base,
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
-    __BUILD_TIMESTAMP__: JSON.stringify(buildTimestamp),
+    __BUILD_TIMESTAMP_UTC__: JSON.stringify(buildTimestampUtc),
   },
   plugins: [
     react(),
