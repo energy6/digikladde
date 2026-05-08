@@ -243,7 +243,7 @@ const CourseDetail = () => {
       <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
         <Card
           size="small"
-          bodyStyle={{ padding: 12 }}
+          styles={{ body: { padding: 12 } }}
           title="Schüler"
           extra={(
             <Space orientation="horizontal" size="small" align="center">

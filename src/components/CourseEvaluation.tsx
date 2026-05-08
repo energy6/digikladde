@@ -14,7 +14,7 @@ const renderFlightDetails = (details?: FlightDetails) => {
   if (!details) return null;
 
   const rows: string[] = [];
-  if (details.terrain) rows.push(`Gelaende: ${details.terrain}`);
+  if (details.terrain) rows.push(`Gelände: ${details.terrain}`);
   if (details.teacher) rows.push(`Lehrer: ${details.teacher}`);
   if (details.startLeiter) rows.push(`Startleiter: ${details.startLeiter}`);
   if (details.startPlace) rows.push(`Startplatz: ${details.startPlace}`);
@@ -99,7 +99,7 @@ const CourseEvaluation = () => {
                           children: studentFlights.length ? (
                             <Space orientation="vertical" size="small" style={{ width: '100%' }}>
                               {studentFlights.map((flight) => (
-                                <Card key={flight.id} size="small" bodyStyle={{ padding: 10 }} variant="outlined">
+                                <Card key={flight.id} size="small" styles={{ body: { padding: 10 } }} variant="outlined">
                                   <Space orientation="vertical" size={2} style={{ width: '100%' }}>
                                     <Text>
                                       Start: {new Date(flight.startTime).toLocaleString()}

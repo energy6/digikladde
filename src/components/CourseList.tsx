@@ -103,7 +103,7 @@ const CourseList = () => {
                 size="small"
                 hoverable={!deleteMode}
                 style={{ width: '100%' }}
-                bodyStyle={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 12 }}
+                styles={{ body: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 12 } }}
                 onClick={() => !deleteMode && navigate(`/course/${course.id}`)}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
