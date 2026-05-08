@@ -1,4 +1,4 @@
-import { EditOutlined, FilePdfOutlined, LeftOutlined, PlusOutlined } from '@ant-design/icons';
+import { EditOutlined, PlusOutlined } from '@ant-design/icons';
 import { faBan, faPlaneArrival, faPlaneDeparture, faTrashCan } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { Button, Card, Checkbox, Form, Input, List, Modal, Popconfirm, Select, Space, Typography } from 'antd';
@@ -7,7 +7,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { db } from '../db/database';
 import type { Course, Flight, FlightDetails, Student } from '../models/types';
 import { maneuvers } from '../models/types';
-import { generatePDF } from '../utils/pdfExport';
+import CourseHeader from './CourseHeader';
 
 const { Text } = Typography;
 
@@ -191,25 +191,13 @@ const CourseDetail = () => {
 
   return (
     <div>
-      <Card style={{ marginBottom: 24 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-          <div>
-            <Button type="link" icon={<LeftOutlined />} onClick={() => navigate('/')} />
-            <Typography.Title level={3} style={{ display: 'inline-block', margin: '0 0 0 12px' }}>
-              {course.name}
-            </Typography.Title>
-            <Typography.Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
-              {course.courseType && <><strong>{course.courseType}</strong> &middot; </>}
-              {course.startDate} – {course.endDate}
-            </Typography.Text>
-          </div>
-          <Space wrap>
-            <Button key="pdf" icon={<FilePdfOutlined />} onClick={() => generatePDF(Number(id))}>
-              Kurs PDF
-            </Button>
-          </Space>
-        </div>
-      </Card>
+      <CourseHeader
+        course={course}
+        prev={() => navigate(`/`)}
+        next={() => navigate(`/course/${id}/evaluation`)}
+        editable
+        onCourseUpdated={(updatedCourse) => setCourse(updatedCourse)}
+      />
 
       <Space orientation="vertical" size="large" style={{ width: '100%' }}>
         <Card title="Aktive Schüler im Flug" variant="outlined">

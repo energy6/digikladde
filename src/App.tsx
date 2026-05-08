@@ -1,10 +1,11 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Layout, Typography } from 'antd';
-import CourseList from './components/CourseList';
-import CourseForm from './components/CourseForm';
+import { Route, BrowserRouter as Router, Routes } from 'react-router-dom';
 import CourseDetail from './components/CourseDetail';
-import StudentForm from './components/StudentForm';
+import CourseEvaluation from './components/CourseEvaluation';
+import CourseForm from './components/CourseForm';
+import CourseList from './components/CourseList';
 import FlightRecorder from './components/FlightRecorder';
+import StudentForm from './components/StudentForm';
 
 const { Header, Content } = Layout;
 
@@ -22,6 +23,7 @@ function App() {
             <Route path="/" element={<CourseList />} />
             <Route path="/course/new" element={<CourseForm />} />
             <Route path="/course/:id" element={<CourseDetail />} />
+            <Route path="/course/:id/evaluation" element={<CourseEvaluation />} />
             <Route path="/course/:id/edit" element={<CourseForm />} />
             <Route path="/course/:id/add-student" element={<StudentForm />} />
             <Route path="/course/:id/flight" element={<FlightRecorder />} />

@@ -1,9 +1,10 @@
+import { PlusOutlined, RightOutlined } from '@ant-design/icons';
+import { Button, Card, List, Space, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Card, List, Space, Typography } from 'antd';
-import { PlusOutlined, RightOutlined } from '@ant-design/icons';
 import { db } from '../db/database';
 import type { Course } from '../models/types';
+import CourseTitle from './CourseTitle';
 
 const CourseList = () => {
   const [courses, setCourses] = useState<Course[]>([]);
@@ -25,7 +26,7 @@ const CourseList = () => {
 
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto' }}>
-      <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <Space orientation="vertical" size="large" style={{ width: '100%' }}>
         <Space align="center" style={{ width: '100%', display: 'flex', justifyContent: 'space-between' }}>
           <Typography.Title level={2} style={{ margin: 0 }}>
             Kursliste
@@ -47,12 +48,7 @@ const CourseList = () => {
                 onClick={() => navigate(`/course/${course.id}`)}
               >
                 <div>
-                  <Typography.Title level={4} style={{ margin: 0 }}>
-                    {course.name}
-                  </Typography.Title>
-                  <Typography.Text type="secondary">
-                    {course.startDate} – {course.endDate}
-                  </Typography.Text>
+                  <CourseTitle course={course} />
                 </div>
                 <Button type="link" icon={<RightOutlined />} />
               </Card>
