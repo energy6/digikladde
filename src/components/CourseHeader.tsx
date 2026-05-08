@@ -1,4 +1,6 @@
 import { LeftOutlined, RightOutlined } from "@ant-design/icons";
+import { faFloppyDisk } from "@fortawesome/free-solid-svg-icons";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { Button, Card, Form, Input, Modal, Select, Space } from "antd";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { db } from "../db/database";
@@ -194,7 +196,8 @@ const CourseHeader = ({ course, prev, next, editable = false, onCourseUpdated }:
         open={editModalOpen}
         onCancel={() => setEditModalOpen(false)}
         onOk={handleSave}
-        okText="Speichern"
+        okText={<FontAwesomeIcon icon={faFloppyDisk} />}
+        cancelButtonProps={{ style: { display: "none" } }}
       >
         <Form layout="vertical">
           <Form.Item label="Kursname" required>

@@ -1,3 +1,5 @@
+import { faFloppyDisk, faXmark } from '@fortawesome/free-solid-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { Button, Form, Input, Select, Space, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -60,12 +62,8 @@ const CourseForm = () => {
             <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
           </Form.Item>
           <Form.Item>
-            <Button type="primary" htmlType="submit">
-              Speichern
-            </Button>
-            <Button style={{ marginLeft: 12 }} onClick={() => navigate(-1)}>
-              Abbrechen
-            </Button>
+            <Button type="primary" htmlType="submit" icon={<FontAwesomeIcon icon={faFloppyDisk} />} />
+            <Button type="primary" danger style={{ marginLeft: 8 }}  onClick={() => navigate(-1)} icon={<FontAwesomeIcon icon={faXmark} />} />
           </Form.Item>
         </Form>
       </Space>

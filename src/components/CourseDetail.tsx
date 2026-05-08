@@ -1,5 +1,5 @@
 import { EditOutlined, PlusOutlined } from '@ant-design/icons';
-import { faBackwardStep, faBan, faCheck, faCircleExclamation, faForwardStep, faMicrophone, faPlaneArrival, faPlaneDeparture, faTrashCan } from '@fortawesome/free-solid-svg-icons';
+import { faBackwardStep, faBan, faCheck, faCircleExclamation, faFloppyDisk, faForwardStep, faMicrophone, faPlaneArrival, faPlaneDeparture, faTrashCan } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { Button, Card, Checkbox, Form, Input, List, Modal, Popconfirm, Select, Space, Typography } from 'antd';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -765,7 +765,8 @@ const CourseDetail = () => {
         open={addModalVisible}
         onCancel={() => setAddModalVisible(false)}
         onOk={handleAddStudent}
-        okText="Hinzufügen"
+        okText={<FontAwesomeIcon icon={faFloppyDisk} />}
+        cancelButtonProps={{ style: { display: "none" } }}
       >
         <Space orientation="vertical" size="small" style={{ width: '100%' }}>
           <Text strong>Wähle vorhandenen Schüler oder erstelle einen neuen.</Text>
@@ -831,7 +832,8 @@ const CourseDetail = () => {
         open={editModalVisible}
         onCancel={() => { setEditModalVisible(false); setEditStudent(null); }}
         onOk={handleEditStudent}
-        okText="Speichern"
+        okText={<FontAwesomeIcon icon={faFloppyDisk} />}
+        cancelButtonProps={{ style: { display: "none" } }}
       >
         {editStudent && (
           <Form layout="vertical">
@@ -874,7 +876,11 @@ const CourseDetail = () => {
         open={startModalVisible}
         onCancel={() => setStartModalVisible(false)}
         onOk={handleStartFlight}
-        okText="Starten"
+        okText={<FontAwesomeIcon icon={faPlaneDeparture} />}
+        cancelButtonProps={{ style: { display: 'none' } }}
+        okButtonProps={{
+          style: { background: '#1f8f3a', borderColor: '#1f8f3a' },
+        }}
       >
         <Form layout="vertical">
           {(course.courseType === 'Grundkurs' || course.courseType === 'Windenkurs') && (
