@@ -1,5 +1,5 @@
 import { Layout, Typography } from 'antd';
-import { Route, BrowserRouter as Router, Routes } from 'react-router-dom';
+import { BrowserRouter, HashRouter, Route, Routes } from 'react-router-dom';
 import CourseDetail from './components/CourseDetail';
 import CourseEvaluation from './components/CourseEvaluation';
 import CourseForm from './components/CourseForm';
@@ -7,7 +7,11 @@ import CourseList from './components/CourseList';
 import FlightRecorder from './components/FlightRecorder';
 import StudentForm from './components/StudentForm';
 
-const { Header, Content } = Layout;
+const { Header, Content, Footer } = Layout;
+
+const appVersion = __APP_VERSION__;
+const appTimestamp = __BUILD_TIMESTAMP__;
+const Router = import.meta.env.BASE_URL === '/' ? BrowserRouter : HashRouter;
 
 function App() {
   return (
@@ -29,6 +33,11 @@ function App() {
             <Route path="/course/:id/flight" element={<FlightRecorder />} />
           </Routes>
         </Content>
+        <Footer style={{ padding: '8px 24px', textAlign: 'center', background: '#0a2239' }}>
+          <Typography.Text type="secondary" style={{ color: '#818181' }}>
+            Version {appVersion} | {appTimestamp}
+          </Typography.Text>
+        </Footer>
       </Layout>
     </Router>
   );
