@@ -2,7 +2,7 @@ import { EditOutlined, PlusOutlined } from '@ant-design/icons';
 import { faBackwardStep, faBan, faCheck, faCircleExclamation, faFloppyDisk, faForwardStep, faMicrophone, faPlaneArrival, faPlaneDeparture, faTrashCan } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { Button, Card, Checkbox, Form, Input, List, Modal, Popconfirm, Select, Space, Typography } from 'antd';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { db } from '../db/database';
 import type { Course, Flight, FlightDetails, Student } from '../models/types';
@@ -11,6 +11,40 @@ import CourseHeader from './CourseHeader';
 
 const { Text } = Typography;
 const LANDING_PENDING_MS = 5 * 60 * 1000;
+
+type SpeechRecognitionAlternativeLike = {
+  transcript: string;
+};
+
+type SpeechRecognitionResultLike = {
+  isFinal: boolean;
+  0: SpeechRecognitionAlternativeLike;
+};
+
+type SpeechRecognitionEventLike = {
+  resultIndex: number;
+  results: ArrayLike<SpeechRecognitionResultLike>;
+};
+
+type SpeechRecognitionLike = {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+
+type SpeechRecognitionConstructorLike = new () => SpeechRecognitionLike;
+
+declare global {
+  interface Window {
+    SpeechRecognition?: SpeechRecognitionConstructorLike;
+    webkitSpeechRecognition?: SpeechRecognitionConstructorLike;
+  }
+}
 
 const CourseDetail = () => {
   const { id } = useParams();
@@ -30,7 +64,7 @@ const CourseDetail = () => {
   const [editStudent, setEditStudent] = useState<Student | null>(null);
   const [deleteMode, setDeleteMode] = useState(false);
   const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
-  const [nowTs, setNowTs] = useState(Date.now());
+  const [nowTs, setNowTs] = useState(0);
   const [remarksModalVisible, setRemarksModalVisible] = useState(false);
   const [selectedRemarkFlight, setSelectedRemarkFlight] = useState<{ flightId: number; studentName: string } | null>(null);
   const [existingRemarks, setExistingRemarks] = useState<string[]>([]);
@@ -38,7 +72,7 @@ const CourseDetail = () => {
   const [isListening, setIsListening] = useState(false);
   const [remarksReadOnly, setRemarksReadOnly] = useState(false);
   const [remarksContextText, setRemarksContextText] = useState('');
-  const speechRecognitionRef = useRef<any>(null);
+  const speechRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
 
   const isPendingLanding = (flight: Flight) => Boolean(flight.landingPendingUntil && !flight.landingFinalizedAt);
 
@@ -49,7 +83,19 @@ const CourseDetail = () => {
     return `${minutes}:${String(seconds).padStart(2, '0')}`;
   };
 
-  const finalizePendingFlights = async () => {
+  const refresh = useCallback(async () => {
+    if (!id) return;
+    const [currentCourse, students, courseFlights] = await Promise.all([
+      db.courses.get(Number(id)),
+      db.students.toArray(),
+      db.flights.where('courseId').equals(Number(id)).toArray(),
+    ]);
+    setCourse(currentCourse || null);
+    setAllStudents(students);
+    setFlights(courseFlights);
+  }, [id]);
+
+  const finalizePendingFlights = useCallback(async () => {
     if (!id) return false;
     const courseId = Number(id);
     const courseFlights = await db.flights.where('courseId').equals(courseId).toArray();
@@ -93,7 +139,7 @@ const CourseDetail = () => {
     }
 
     return true;
-  };
+  }, [id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -132,7 +178,7 @@ const CourseDetail = () => {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, finalizePendingFlights]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -157,19 +203,7 @@ const CourseDetail = () => {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [id]);
-
-  const refresh = async () => {
-    if (!id) return;
-    const [currentCourse, students, courseFlights] = await Promise.all([
-      db.courses.get(Number(id)),
-      db.students.toArray(),
-      db.flights.where('courseId').equals(Number(id)).toArray(),
-    ]);
-    setCourse(currentCourse || null);
-    setAllStudents(students);
-    setFlights(courseFlights);
-  };
+  }, [finalizePendingFlights, refresh]);
 
   const activeFlights = useMemo(
     () => flights
@@ -483,7 +517,7 @@ const CourseDetail = () => {
   };
 
   const handleToggleDictation = () => {
-    const SpeechRecognitionCtor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognitionCtor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
 
     if (!SpeechRecognitionCtor) {
       Modal.warning({
@@ -503,7 +537,7 @@ const CourseDetail = () => {
     recognition.interimResults = false;
     recognition.continuous = false;
 
-    recognition.onresult = (event: any) => {
+    recognition.onresult = (event: SpeechRecognitionEventLike) => {
       let transcript = '';
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
         if (event.results[index].isFinal) {
