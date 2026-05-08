@@ -133,7 +133,7 @@ const CourseDetail = () => {
     }
 
     if (addMode === 'new') {
-      const studentId = await db.students.add(newStudent);
+      const studentId = Number(await db.students.add(newStudent));
       const createdStudent = { ...newStudent, id: studentId };
       await db.courses.update(Number(id), { students: [...course.students, createdStudent] });
     }
@@ -141,14 +141,14 @@ const CourseDetail = () => {
     setAddModalVisible(false);
     setSelectedStudentId(null);
     setNewStudent({ name: '', glider: '', color: '', totalFlights: 0 });
-    refresh();
+    await refresh();
   };
 
   const handleStartFlight = async () => {
-    if (!selectedFlightStudent || !id) return;
+    if (!selectedFlightStudent?.id || !id) return;
     await db.flights.add({
       courseId: Number(id),
-      studentId: selectedFlightStudent.id!,
+      studentId: selectedFlightStudent.id,
       maneuvers: selectedManeuvers,
       details: flightDetails,
       startTime: new Date().toISOString(),
@@ -158,7 +158,7 @@ const CourseDetail = () => {
     setSelectedFlightStudent(null);
     setSelectedManeuvers([]);
     setFlightDetails({});
-    refresh();
+    await refresh();
   };
 
   const handleEditStudent = async () => {
@@ -175,7 +175,7 @@ const CourseDetail = () => {
     await db.courses.update(Number(id), { students: updatedStudents });
     setEditModalVisible(false);
     setEditStudent(null);
-    refresh();
+    await refresh();
   };
 
   const handleLandFlight = async (flightId: number, studentId: number) => {
@@ -191,12 +191,12 @@ const CourseDetail = () => {
         await db.courses.update(Number(id), { students: updatedStudents });
       }
     }
-    refresh();
+    await refresh();
   };
 
   const handleAbortFlight = async (flightId: number) => {
     await db.flights.delete(flightId);
-    refresh();
+    await refresh();
   };
 
   const handleToggleDeleteMode = () => {
@@ -223,7 +223,7 @@ const CourseDetail = () => {
     await db.courses.update(Number(id), { students: updatedStudents });
     setDeleteMode(false);
     setSelectedStudentIds([]);
-    refresh();
+    await refresh();
   };
 
   if (!course) {
@@ -402,7 +402,7 @@ const CourseDetail = () => {
               { label: 'Neuen Schüler erstellen', value: 'new' },
             ]}
             value={addMode}
-            onChange={(value) => setAddMode(value as 'existing' | 'new')}
+            onChange={(value: 'existing' | 'new') => setAddMode(value)}
           />
 
           {addMode === 'existing' ? (
@@ -565,7 +565,7 @@ const CourseDetail = () => {
             <Checkbox.Group
               options={maneuvers}
               value={selectedManeuvers}
-              onChange={(values) => setSelectedManeuvers(values as string[])}
+              onChange={(values) => setSelectedManeuvers([...values])}
               style={{ width: '100%' }}
             />
           </Form.Item>

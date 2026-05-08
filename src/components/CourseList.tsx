@@ -15,7 +15,7 @@ const CourseList = () => {
       const allCourses = await db.courses.toArray();
       setCourses(allCourses);
     };
-    loadCourses();
+    void loadCourses();
   }, []);
 
   const sortedCourses = [...courses].sort((a, b) => {

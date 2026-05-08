@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, type SyntheticEvent } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { db } from '../db/database';
 import type { Student } from '../models/types';
 
@@ -10,10 +10,10 @@ const StudentForm = () => {
   const [glider, setGlider] = useState('');
   const [color, setColor] = useState('');
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: SyntheticEvent) => {
     e.preventDefault();
     const student: Student = { name, glider, color, totalFlights: 0 };
-    const studentId = await db.students.add(student);
+    const studentId = Number(await db.students.add(student));
     if (id) {
       const course = await db.courses.get(Number(id));
       if (course) {
@@ -21,7 +21,7 @@ const StudentForm = () => {
         await db.courses.update(Number(id), { students: course.students });
       }
     }
-    navigate(`/course/${id}`);
+    await navigate(id ? `/course/${id}` : '/');
   };
 
   return (

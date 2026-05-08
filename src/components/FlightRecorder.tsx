@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { db } from '../db/database';
-import type { Course, Student, Flight } from '../models/types';
+import type { Course, Flight, Student } from '../models/types';
 import { maneuvers } from '../models/types';
 
 const FlightRecorder = () => {
@@ -19,7 +19,7 @@ const FlightRecorder = () => {
         setCourse(c || null);
       }
     };
-    loadCourse();
+    void loadCourse();
   }, [id]);
 
   const startFlight = () => {

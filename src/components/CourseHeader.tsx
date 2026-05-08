@@ -111,7 +111,7 @@ const CourseHeader = ({ course, prev, next, editable = false, onCourseUpdated }:
     const updatedCourse: Course = {
       ...course,
       name: trimmedName,
-      courseType: draft.courseType as CourseType,
+      courseType: draft.courseType,
       startDate: draft.startDate,
       endDate: draft.endDate,
     };
@@ -204,7 +204,7 @@ const CourseHeader = ({ course, prev, next, editable = false, onCourseUpdated }:
             <Select
               options={courseTypes.map((type) => ({ label: type, value: type }))}
               value={draft.courseType}
-              onChange={(value) => setDraft({ ...draft, courseType: value as CourseType })}
+              onChange={(value: CourseType) => setDraft({ ...draft, courseType: value })}
             />
           </Form.Item>
           <Form.Item label="Startdatum" required>

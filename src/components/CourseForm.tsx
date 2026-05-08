@@ -24,7 +24,7 @@ const CourseForm = () => {
           setEndDate(course.endDate);
         }
       };
-      loadCourse();
+      void loadCourse();
     }
   }, [id]);
 
@@ -35,7 +35,7 @@ const CourseForm = () => {
     } else {
       await db.courses.add(course);
     }
-    navigate('/');
+    await navigate('/');
   };
 
   return (

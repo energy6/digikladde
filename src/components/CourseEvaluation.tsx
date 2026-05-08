@@ -49,7 +49,7 @@ const CourseEvaluation = () => {
       setCourse(loadedCourse || null);
       setFlights(await db.flights.where('courseId').equals(courseId).toArray());
     };
-    load();
+    void load();
   }, [id]);
 
   const studentsSorted = useMemo(() => {
