@@ -35,6 +35,7 @@ export interface Flight {
   courseId: number;
   studentId: number;
   maneuvers: string[];
+  remarks?: string[];
   details?: FlightDetails;
   startTime: string;
   landingMarkedAt?: string;

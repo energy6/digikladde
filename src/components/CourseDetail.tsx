@@ -1,8 +1,8 @@
 import { EditOutlined, PlusOutlined } from '@ant-design/icons';
-import { faBackwardStep, faBan, faForwardStep, faPlaneArrival, faPlaneDeparture, faTrashCan } from '@fortawesome/free-solid-svg-icons';
+import { faBackwardStep, faBan, faCheck, faCircleExclamation, faForwardStep, faMicrophone, faPlaneArrival, faPlaneDeparture, faTrashCan } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { Button, Card, Checkbox, Form, Input, List, Modal, Popconfirm, Select, Space, Typography } from 'antd';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { db } from '../db/database';
 import type { Course, Flight, FlightDetails, Student } from '../models/types';
@@ -31,6 +31,14 @@ const CourseDetail = () => {
   const [deleteMode, setDeleteMode] = useState(false);
   const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
   const [nowTs, setNowTs] = useState(Date.now());
+  const [remarksModalVisible, setRemarksModalVisible] = useState(false);
+  const [selectedRemarkFlight, setSelectedRemarkFlight] = useState<{ flightId: number; studentName: string } | null>(null);
+  const [existingRemarks, setExistingRemarks] = useState<string[]>([]);
+  const [newRemark, setNewRemark] = useState('');
+  const [isListening, setIsListening] = useState(false);
+  const [remarksReadOnly, setRemarksReadOnly] = useState(false);
+  const [remarksContextText, setRemarksContextText] = useState('');
+  const speechRecognitionRef = useRef<any>(null);
 
   const isPendingLanding = (flight: Flight) => Boolean(flight.landingPendingUntil && !flight.landingFinalizedAt);
 
@@ -230,6 +238,24 @@ const CourseDetail = () => {
     return [...active, ...pending, ...notFlying];
   }, [activeEntries, pendingEntries, notFlyingStudents]);
 
+  const hasRemarksOnLastFlightByStudentId = useMemo(() => {
+    const latestByStudent = new Map<number, Flight>();
+
+    flights.forEach((flight) => {
+      const currentLatest = latestByStudent.get(flight.studentId);
+      if (!currentLatest || flight.startTime > currentLatest.startTime) {
+        latestByStudent.set(flight.studentId, flight);
+      }
+    });
+
+    const hasRemarksMap = new Map<number, boolean>();
+    latestByStudent.forEach((flight, studentId) => {
+      hasRemarksMap.set(studentId, Boolean(flight.remarks?.length));
+    });
+
+    return hasRemarksMap;
+  }, [flights]);
+
   const availableExistingStudents = useMemo(() => {
     if (!course) return [];
     return allStudents.filter((student) => !course.students.some((courseStudent) => courseStudent.id === student.id));
@@ -385,6 +411,133 @@ const CourseDetail = () => {
     await refresh();
   };
 
+  const openRemarksModal = (flight: Flight, student: Student) => {
+    if (!flight.id) return;
+    setRemarksReadOnly(false);
+    setRemarksContextText('');
+    setSelectedRemarkFlight({ flightId: flight.id, studentName: student.name });
+    setExistingRemarks(flight.remarks ?? []);
+    setNewRemark('');
+    setRemarksModalVisible(true);
+  };
+
+  const openLastFlightRemarksModal = async (student: Student) => {
+    if (!id || !student.id) return;
+
+    const courseFlights = await db.flights.where('courseId').equals(Number(id)).toArray();
+    const latestFlight = courseFlights
+      .filter((flight) => flight.studentId === student.id)
+      .sort((a, b) => b.startTime.localeCompare(a.startTime))[0];
+
+    setRemarksReadOnly(true);
+    setNewRemark('');
+    setSelectedRemarkFlight(null);
+
+    if (!latestFlight) {
+      setRemarksContextText('Kein Flug vorhanden.');
+      setExistingRemarks([]);
+      setRemarksModalVisible(true);
+      return;
+    }
+
+    const flightTime = new Date(latestFlight.startTime).toLocaleString();
+    setRemarksContextText(`Letzter Flug: ${flightTime}`);
+    setExistingRemarks(latestFlight.remarks ?? []);
+    setRemarksModalVisible(true);
+  };
+
+  const closeRemarksModal = () => {
+    if (speechRecognitionRef.current) {
+      speechRecognitionRef.current.stop();
+      speechRecognitionRef.current = null;
+    }
+    setIsListening(false);
+    setRemarksModalVisible(false);
+    setSelectedRemarkFlight(null);
+    setExistingRemarks([]);
+    setNewRemark('');
+    setRemarksReadOnly(false);
+    setRemarksContextText('');
+  };
+
+  const handleSaveRemark = async () => {
+    if (!selectedRemarkFlight) return;
+    const remark = newRemark.trim();
+    if (!remark) {
+      closeRemarksModal();
+      return;
+    }
+
+    const flight = await db.flights.get(selectedRemarkFlight.flightId);
+    if (!flight) {
+      closeRemarksModal();
+      return;
+    }
+
+    const updatedRemarks = [...(flight.remarks ?? []), remark];
+    await db.flights.update(selectedRemarkFlight.flightId, { remarks: updatedRemarks });
+    closeRemarksModal();
+    await refresh();
+  };
+
+  const handleToggleDictation = () => {
+    const SpeechRecognitionCtor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognitionCtor) {
+      Modal.warning({
+        title: 'Spracheingabe nicht verfugbar',
+        content: 'Dieser Browser unterstutzt keine Sprache-zu-Text-Funktion.',
+      });
+      return;
+    }
+
+    if (isListening && speechRecognitionRef.current) {
+      speechRecognitionRef.current.stop();
+      return;
+    }
+
+    const recognition = new SpeechRecognitionCtor();
+    recognition.lang = 'de-DE';
+    recognition.interimResults = false;
+    recognition.continuous = false;
+
+    recognition.onresult = (event: any) => {
+      let transcript = '';
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        if (event.results[index].isFinal) {
+          transcript += event.results[index][0].transcript;
+        }
+      }
+
+      const cleaned = transcript.trim();
+      if (!cleaned) return;
+
+      setNewRemark((current) => (current.trim() ? `${current.trim()} ${cleaned}` : cleaned));
+    };
+
+    recognition.onerror = () => {
+      setIsListening(false);
+      speechRecognitionRef.current = null;
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      speechRecognitionRef.current = null;
+    };
+
+    speechRecognitionRef.current = recognition;
+    setIsListening(true);
+    recognition.start();
+  };
+
+  useEffect(() => {
+    return () => {
+      if (speechRecognitionRef.current) {
+        speechRecognitionRef.current.stop();
+      }
+    };
+  }, []);
+
   if (!course) {
     return <Text>Lade Kursdaten…</Text>;
   }
@@ -444,6 +597,7 @@ const CourseDetail = () => {
                   const { student, flight } = entry;
                   return (
                     <List.Item
+                      onDoubleClick={() => openRemarksModal(flight, student)}
                       style={{
                         background: '#1f5f3a',
                         borderRadius: 8,
@@ -485,6 +639,7 @@ const CourseDetail = () => {
                   const { student, flight } = entry;
                   return (
                     <List.Item
+                      onDoubleClick={() => openRemarksModal(flight, student)}
                       style={{
                         background: '#1765ad',
                         borderRadius: 8,
@@ -520,12 +675,18 @@ const CourseDetail = () => {
                 const { student } = entry;
                 const studentId = student.id;
                 const isSelected = studentId ? selectedStudentIds.includes(studentId) : false;
+                const showRemarksIndicator = studentId ? hasRemarksOnLastFlightByStudentId.get(studentId) === true : false;
 
                 return (
                   <List.Item
                     onClick={() => {
                       if (deleteMode && studentId) {
                         handleToggleStudentSelection(studentId);
+                      }
+                    }}
+                    onDoubleClick={() => {
+                      if (!deleteMode) {
+                        void openLastFlightRemarksModal(student);
                       }
                     }}
                     style={deleteMode ? {
@@ -569,7 +730,18 @@ const CourseDetail = () => {
                     ]}
                   >
                     <List.Item.Meta
-                      title={`${student.name} (${student.totalFlights ?? 0})`}
+                      title={(
+                        <span>
+                          {student.name} ({student.totalFlights ?? 0})
+                          {showRemarksIndicator ? (
+                            <FontAwesomeIcon
+                              icon={faCircleExclamation}
+                              style={{ color: '#d48806', marginLeft: 8 }}
+                              title="Letzter Flug enthält Bemerkungen"
+                            />
+                          ) : null}
+                        </span>
+                      )}
                       description={`${student.glider} — ${student.color}`}
                     />
                   </List.Item>
@@ -765,6 +937,54 @@ const CourseDetail = () => {
             />
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal
+        title={selectedRemarkFlight ? `Bemerkung: ${selectedRemarkFlight.studentName}` : 'Bemerkung'}
+        open={remarksModalVisible}
+        onCancel={closeRemarksModal}
+        footer={remarksReadOnly ? null : (
+          <Space orientation="horizontal" size="small" style={{ width: '100%', justifyContent: 'flex-end' }}>
+            <Button
+              onClick={handleToggleDictation}
+              icon={<FontAwesomeIcon icon={faMicrophone} />}
+              type={isListening ? 'primary' : 'default'}
+            />
+            <Button
+              type="primary"
+              style={{ background: '#1f8f3a', borderColor: '#1f8f3a' }}
+              onClick={handleSaveRemark}
+              icon={<FontAwesomeIcon icon={faCheck} />}
+            />
+          </Space>
+        )}
+      >
+        <Space orientation="vertical" size="small" style={{ width: '100%' }}>
+          {remarksContextText ? <Text type="secondary">{remarksContextText}</Text> : null}
+
+          {existingRemarks.length > 0 && (
+            <div>
+              {existingRemarks.map((remark, idx) => (
+                <p key={`${remark}-${idx}`} style={{ marginBottom: 8 }}>
+                  {remark}
+                </p>
+              ))}
+            </div>
+          )}
+
+          {remarksReadOnly && existingRemarks.length === 0 ? (
+            <Text type="secondary">Keine Bemerkungen vorhanden.</Text>
+          ) : null}
+
+          <Form.Item style={{ marginBottom: 0, display: remarksReadOnly ? 'none' : 'block' }}>
+            <Input.TextArea
+              rows={4}
+              value={newRemark}
+              onChange={(event) => setNewRemark(event.target.value)}
+              placeholder="Bemerkung eingeben oder per Mikrofon diktieren"
+            />
+          </Form.Item>
+        </Space>
       </Modal>
     </div>
   );
