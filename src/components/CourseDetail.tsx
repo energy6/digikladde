@@ -1,11 +1,11 @@
+import { FilePdfOutlined, LeftOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons';
+import { Button, Card, Checkbox, Form, List, Modal, Select, Space, Typography } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Button, Card, Checkbox, Form, List, Modal, Select, Space, Typography } from 'antd';
-import { LeftOutlined, PlusOutlined, FilePdfOutlined, UploadOutlined } from '@ant-design/icons';
 import { db } from '../db/database';
-import { generatePDF } from '../utils/pdfExport';
 import type { Course, Flight, Student } from '../models/types';
 import { maneuvers } from '../models/types';
+import { generatePDF } from '../utils/pdfExport';
 
 const { Text } = Typography;
 
@@ -116,6 +116,7 @@ const CourseDetail = () => {
               {course.name}
             </Typography.Title>
             <Typography.Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
+              {course.courseType && <><strong>{course.courseType}</strong> &middot; </>}
               {course.startDate} – {course.endDate}
             </Typography.Text>
           </div>

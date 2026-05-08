@@ -1,13 +1,15 @@
+import { Button, Form, Input, Select, Space, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Button, Form, Input, Space, Typography } from 'antd';
 import { db } from '../db/database';
-import type { Course } from '../models/types';
+import type { Course, CourseType } from '../models/types';
+import { courseTypes } from '../models/types';
 
 const CourseForm = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [name, setName] = useState('');
+  const [courseType, setCourseType] = useState<CourseType>('Grundkurs');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
@@ -17,6 +19,7 @@ const CourseForm = () => {
         const course = await db.courses.get(Number(id));
         if (course) {
           setName(course.name);
+          setCourseType(course.courseType ?? 'Grundkurs');
           setStartDate(course.startDate);
           setEndDate(course.endDate);
         }
@@ -26,9 +29,9 @@ const CourseForm = () => {
   }, [id]);
 
   const handleSubmit = async () => {
-    const course: Course = { name, startDate, endDate, students: [] };
+    const course: Course = { name, courseType, startDate, endDate, students: [] };
     if (id) {
-      await db.courses.update(Number(id), { name, startDate, endDate });
+      await db.courses.update(Number(id), { name, courseType, startDate, endDate });
     } else {
       await db.courses.add(course);
     }
@@ -42,6 +45,13 @@ const CourseForm = () => {
         <Form layout="vertical" onFinish={handleSubmit}>
           <Form.Item label="Name" required>
             <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </Form.Item>
+          <Form.Item label="Kursart" required>
+            <Select
+              value={courseType}
+              onChange={(value) => setCourseType(value)}
+              options={courseTypes.map((type) => ({ label: type, value: type }))}
+            />
           </Form.Item>
           <Form.Item label="Startdatum" required>
             <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />

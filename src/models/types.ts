@@ -1,6 +1,11 @@
+export type CourseType = 'Grundkurs' | 'Windenkurs' | 'Höhenkurs';
+
+export const courseTypes: CourseType[] = ['Grundkurs', 'Windenkurs', 'Höhenkurs'];
+
 export interface Course {
   id?: number;
   name: string;
+  courseType: CourseType;
   startDate: string;
   endDate: string;
   students: Student[];
