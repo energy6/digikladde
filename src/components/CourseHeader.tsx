@@ -199,21 +199,22 @@ const CourseHeader = ({ course, prev, next, editable = false, onCourseUpdated }:
         okText={<FontAwesomeIcon icon={faFloppyDisk} />}
         cancelButtonProps={{ style: { display: "none" } }}
       >
-        <Form layout="vertical">
-          <Form.Item label="Kursname" required>
+        <Form layout="vertical" size="small" requiredMark={false}>
+          <Form.Item label={<>Kursname <span style={{ color: '#ff4d4f' }}>*</span></>} style={{ marginBottom: 8 }}>
             <Input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
           </Form.Item>
-          <Form.Item label="Kursart" required>
+          <Form.Item label={<>Kursart <span style={{ color: '#ff4d4f' }}>*</span></>} style={{ marginBottom: 8 }}>
             <Select
               options={courseTypes.map((type) => ({ label: type, value: type }))}
               value={draft.courseType}
               onChange={(value: CourseType) => setDraft({ ...draft, courseType: value })}
+              style={{ width: '100%' }}
             />
           </Form.Item>
-          <Form.Item label="Startdatum" required>
+          <Form.Item label={<>Startdatum <span style={{ color: '#ff4d4f' }}>*</span></>} style={{ marginBottom: 8 }}>
             <Input type="date" value={draft.startDate} onChange={(event) => setDraft({ ...draft, startDate: event.target.value })} />
           </Form.Item>
-          <Form.Item label="Enddatum" required>
+          <Form.Item label={<>Enddatum <span style={{ color: '#ff4d4f' }}>*</span></>} style={{ marginBottom: 0 }}>
             <Input type="date" value={draft.endDate} onChange={(event) => setDraft({ ...draft, endDate: event.target.value })} />
           </Form.Item>
         </Form>

@@ -1,3 +1,5 @@
+/* global window, document */
+
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
@@ -161,23 +163,14 @@ const timelapseAdvance = async ({ totalMs, durationMs, steps, label }) => {
 };
 
 const closeOfflineBannerIfVisible = async () => {
-  const offlineBanner = page.locator('text=Offline bereit').first();
-  const updateBanner = page.locator('text=Update verfügbar').first();
+  const offlineVisible = await page.getByText('Offline bereit', { exact: true }).isVisible().catch(() => false);
+  const updateVisible = await page.getByText('Update verfügbar', { exact: true }).isVisible().catch(() => false);
+  if (!offlineVisible && !updateVisible) return;
 
-  const hasOfflineBanner = await offlineBanner.isVisible().catch(() => false);
-  const hasUpdateBanner = await updateBanner.isVisible().catch(() => false);
-  if (!hasOfflineBanner && !hasUpdateBanner) return;
-
-  const markerText = hasOfflineBanner ? 'Offline bereit' : 'Update verfügbar';
-  const closeButton = page
-    .locator('div')
-    .filter({ hasText: markerText })
-    .last()
-    .getByRole('button', { name: 'Schließen' });
-
-  if (await closeButton.isVisible().catch(() => false)) {
-    await tap(closeButton);
-    await page.waitForTimeout(250);
+  const closeBtn = page.getByRole('button', { name: 'Schließen' });
+  if (await closeBtn.isVisible().catch(() => false)) {
+    await closeBtn.click();
+    await page.waitForTimeout(400);
   }
 };
 
@@ -187,18 +180,6 @@ const fillTextInputByLabel = async (labelText, value) => {
   await tap(input);
   await input.fill(value);
   await pace(300);
-};
-
-const openSelectByFormLabel = async (labelText) => {
-  const item = page.locator('.ant-form-item').filter({ hasText: labelText }).first();
-  const combobox = item.getByRole('combobox').first();
-
-  if (await combobox.count()) {
-    await tap(combobox);
-    return;
-  }
-
-  await tap(item.locator('.ant-select-selector').first());
 };
 
 const addStandaloneStudent = async (student) => {
@@ -299,14 +280,120 @@ const attachStudentToCourse = async (courseId, studentName) => {
   }, { id: Number(courseId), name: studentName });
 };
 
-let courseId = '1';
+const ensureRemarkOnLatestFlight = async (studentName, remarkText) => {
+  await page.evaluate(async ({ name, remark }) => {
+    await new Promise((resolve, reject) => {
+      const req = indexedDB.open('DigiKladdeDB');
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction(['students', 'flights'], 'readwrite');
+        const studentStore = tx.objectStore('students');
+        const flightStore = tx.objectStore('flights');
+
+        const studentsReq = studentStore.getAll();
+        studentsReq.onerror = () => reject(studentsReq.error);
+        studentsReq.onsuccess = () => {
+          const student = studentsReq.result.find((entry) => entry.name === name);
+          if (!student?.id) {
+            reject(new Error('student not found'));
+            return;
+          }
+
+          const flightsReq = flightStore.getAll();
+          flightsReq.onerror = () => reject(flightsReq.error);
+          flightsReq.onsuccess = () => {
+            const latestFlight = flightsReq.result
+              .filter((flight) => flight.studentId === student.id)
+              .sort((a, b) => b.startTime.localeCompare(a.startTime))[0];
+
+            if (!latestFlight || !latestFlight.id) {
+              reject(new Error('latest flight not found'));
+              return;
+            }
+
+            const currentRemarks = Array.isArray(latestFlight.remarks) ? latestFlight.remarks : [];
+            if (!currentRemarks.includes(remark)) {
+              latestFlight.remarks = [...currentRemarks, remark];
+              flightStore.put(latestFlight);
+            }
+          };
+        };
+
+        tx.oncomplete = () => {
+          db.close();
+          resolve(true);
+        };
+        tx.onerror = () => reject(tx.error);
+      };
+    });
+  }, { name: studentName, remark: remarkText });
+};
+
+const forceFinalizeLatestFlight = async (studentName) => {
+  await page.evaluate(async ({ name }) => {
+    await new Promise((resolve, reject) => {
+      const req = indexedDB.open('DigiKladdeDB');
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction(['students', 'flights'], 'readwrite');
+        const studentStore = tx.objectStore('students');
+        const flightStore = tx.objectStore('flights');
+
+        const studentsReq = studentStore.getAll();
+        studentsReq.onerror = () => reject(studentsReq.error);
+        studentsReq.onsuccess = () => {
+          const student = studentsReq.result.find((entry) => entry.name === name);
+          if (!student?.id) {
+            reject(new Error('student not found'));
+            return;
+          }
+
+          const flightsReq = flightStore.getAll();
+          flightsReq.onerror = () => reject(flightsReq.error);
+          flightsReq.onsuccess = () => {
+            const latestFlight = flightsReq.result
+              .filter((flight) => flight.studentId === student.id)
+              .sort((a, b) => b.startTime.localeCompare(a.startTime))[0];
+
+            if (!latestFlight || !latestFlight.id) {
+              reject(new Error('latest flight not found'));
+              return;
+            }
+
+            const nowIso = new Date().toISOString();
+            latestFlight.endTime = latestFlight.endTime ?? nowIso;
+            latestFlight.landingFinalizedAt = nowIso;
+            latestFlight.landingPendingUntil = undefined;
+            latestFlight.landingMarkedAt = latestFlight.landingMarkedAt ?? nowIso;
+            flightStore.put(latestFlight);
+          };
+        };
+
+        tx.oncomplete = () => {
+          db.close();
+          resolve(true);
+        };
+        tx.onerror = () => reject(tx.error);
+      };
+    });
+  }, { name: studentName });
+};
+
+let courseId;
 
 try {
-  step('open course create form');
-  await page.goto(`${baseUrl}/course/new`);
+  step('open course list and open create modal');
+  await page.goto(`${baseUrl}/`);
   await installInteractionOverlay();
   await waitUi();
+
   await closeOfflineBannerIfVisible();
+
+  await tap(page.locator('button.ant-btn-primary').filter({ has: page.locator('svg[aria-label="circle-plus"], [data-icon="circle-plus"]') }).first());
+  const createModal = page.locator('.ant-modal').filter({ hasText: 'Kurs erstellen' }).last();
+  await createModal.waitFor({ state: 'visible' });
 
   step('fill course form');
   await fillTextInputByLabel('Name', 'A-Schein Mai 2026');
@@ -316,67 +403,59 @@ try {
   await shot('01-kurs-erstellen.png');
 
   step('save course and return to list');
-  await tap(page.locator('form button.ant-btn-primary').first());
-  await page.waitForURL(`${baseUrl}/`);
+  await tap(createModal.locator('.ant-modal-footer button.ant-btn-primary'));
+  await createModal.waitFor({ state: 'hidden' });
   await waitUi();
-  await closeOfflineBannerIfVisible();
   await shot('02-kurs-waehlen.png');
 
   step('open course detail');
   await tap(page.locator('.ant-card').filter({ hasText: 'A-Schein Mai 2026' }).first());
   await page.waitForURL(/\/course\/\d+$/);
-  courseId = page.url().match(/\/course\/(\d+)$/)?.[1] ?? '1';
+  courseId = page.url().match(/\/course\/(\d+)$/)?.[1];
+  if (!courseId) throw new Error('courseId konnte nicht aus der URL ermittelt werden');
 
-  step('open edit form');
-  await page.goto(`${baseUrl}/course/${courseId}/edit`);
+  step('open edit modal via long-press on course header');
   await waitUi();
-  await closeOfflineBannerIfVisible();
-  await fillTextInputByLabel('Name', 'A-Schein Mai 2026 (Update)');
+  const headerTitle = page.locator('.ant-card').first().locator('[style*="cursor: pointer"]').first();
+  await headerTitle.dispatchEvent('mousedown');
+  await page.waitForTimeout(600);
+  await headerTitle.dispatchEvent('mouseup');
+  const editCourseModal = page.locator('.ant-modal').filter({ hasText: 'Kursinfos bearbeiten' }).last();
+  await editCourseModal.waitFor({ state: 'visible' });
+  await fillTextInputByLabel('Kursname', 'A-Schein Mai 2026 (Update)');
   await shot('03-kursdaten-bearbeiten.png');
   step('save edited course');
-  await tap(page.locator('form button.ant-btn-primary').first());
-  await page.waitForURL(`${baseUrl}/`);
+  await tap(editCourseModal.locator('.ant-modal-footer button.ant-btn-primary'));
+  await editCourseModal.waitFor({ state: 'hidden' });
 
-  step('reopen course detail and force Windenkurs');
-  await tap(page.locator('.ant-card').filter({ hasText: 'A-Schein Mai 2026 (Update)' }).first());
-  await page.waitForURL(new RegExp(`${baseUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/course/\\d+$`));
-  await waitUi();
-  await closeOfflineBannerIfVisible();
-
-  courseId = page.url().match(/\/course\/(\d+)$/)?.[1] ?? courseId;
+  step('force Windenkurs and reload');
   await setCourseType(courseId, 'Windenkurs');
   await page.reload();
   await waitUi();
-  await closeOfflineBannerIfVisible();
 
-  step('create new student via student form');
-  await page.goto(`${baseUrl}/course/${courseId}/add-student`);
-  await waitUi();
-  await closeOfflineBannerIfVisible();
-  const newNameInput = page.locator('label:has-text("Name:")').locator('xpath=following-sibling::input[1]');
-  await tap(newNameInput);
-  await newNameInput.fill('Max Muster');
+  step('create new student via add-student modal');
+  const addStudentBtn = page.locator('.ant-card').filter({ hasText: 'Schüler' }).first().locator('.ant-card-extra button.ant-btn-primary');
+  await tap(addStudentBtn);
+  const addStudentModal = page.locator('.ant-modal').filter({ hasText: 'Schüler hinzufügen' }).last();
+  await addStudentModal.waitFor({ state: 'visible' });
+  await tap(addStudentModal.getByRole('combobox').first());
+  const newOption = page.locator('.ant-select-item-option').filter({ hasText: 'Neuer Schüler' }).last();
+  await tap(newOption);
   await pace(300);
-  const newGliderInput = page.locator('label:has-text("Schirm:")').locator('xpath=following-sibling::input[1]');
-  await tap(newGliderInput);
-  await newGliderInput.fill('Skywalk Mescal');
-  await pace(300);
-  const newColorInput = page.locator('label:has-text("Farbe:")').locator('xpath=following-sibling::input[1]');
-  await tap(newColorInput);
-  await newColorInput.fill('Blau');
+  await fillTextInputByLabel('Name', 'Max Muster');
+  await fillTextInputByLabel('Schirm', 'Skywalk Mescal');
+  await fillTextInputByLabel('Farbe', 'Blau');
   await pace(350);
   await shot('04-schueler-hinzufuegen-neu.png');
-  await tap(page.getByRole('button', { name: 'Hinzufügen' }));
-  await page.waitForURL(new RegExp(`${baseUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/course/\\d+$`));
+  await tap(addStudentModal.locator('.ant-modal-footer button.ant-btn-primary'));
+  await addStudentModal.waitFor({ state: 'hidden' });
   await waitUi();
-  await closeOfflineBannerIfVisible();
 
   step('insert standalone student in db');
   await addStandaloneStudent({ name: 'Eva Extern', glider: 'Advance Alpha', color: 'Rot', totalFlights: 0 });
   await attachStudentToCourse(courseId, 'Eva Extern');
   await page.reload();
   await waitUi();
-  await closeOfflineBannerIfVisible();
   await pace(350);
   await shot('04-schueler-hinzufuegen.png');
 
@@ -384,10 +463,10 @@ try {
 
   step('edit student');
   const maxRow = page.locator('.ant-list-item').filter({ hasText: 'Max Muster' }).first();
-  await tap(maxRow.locator('button').first());
-  const editModal = page.locator('.ant-modal').filter({ hasText: 'Schüler bearbeiten:' }).last();
-  const editForm = editModal.locator('.ant-form').first();
-  const editColorInput = editForm.locator('.ant-form-item').filter({ hasText: 'Farbe' }).locator('input').first();
+  await tap(maxRow.locator('button').filter({ has: page.locator('[data-icon="edit"]') }).first());
+  const editModal = page.locator('.ant-modal').filter({ hasText: 'Schüler bearbeiten' }).last();
+  await editModal.waitFor({ state: 'visible' });
+  const editColorInput = editModal.locator('input').nth(2);
   await tap(editColorInput);
   await editColorInput.fill('Türkis');
   await pace(350);
@@ -438,7 +517,6 @@ try {
   await tap(remarksInput);
   await remarksInput.fill('Sehr sauberer Start, beim nächsten Flug auf Armhaltung achten.');
   await pace(500);
-  await shot('08-bemerkungen.png');
   await tap(remarksModal.locator('.ant-modal-footer button.ant-btn-primary'));
   await remarksModal.waitFor({ state: 'hidden' });
 
@@ -472,28 +550,36 @@ try {
 
   await page.reload();
   await waitUi();
-  await closeOfflineBannerIfVisible();
 
   const pendingAfterReload = page.locator('.ant-list-item').filter({ hasText: 'Final in:' }).first();
   if (await pendingAfterReload.count()) {
     await pendingAfterReload.waitFor({ state: 'hidden', timeout: 7000 }).catch(() => {});
   }
 
-  step('open last-flight remarks');
+  await forceFinalizeLatestFlight('Max Muster');
+  await ensureRemarkOnLatestFlight('Max Muster', 'Sehr sauberer Start, beim nächsten Flug auf Armhaltung achten.');
+  await page.reload();
+  await waitUi();
+
   const idleMaxRow = page.locator('.ant-list-item').filter({ hasText: 'Max Muster' }).first();
+  await idleMaxRow.locator('button').filter({ has: page.locator('[data-icon="edit"]') }).first().waitFor({ state: 'visible', timeout: 15000 });
+  const remarksIndicator = idleMaxRow.locator('svg[data-icon="circle-exclamation"]');
+  await remarksIndicator.waitFor({ state: 'visible', timeout: 15000 });
+  await shot('08-bemerkung-vorhanden.png');
+
+  step('open last-flight remarks');
   await tap(idleMaxRow, { double: true });
   const remarksReadOnly = page.locator('.ant-modal').filter({ hasText: 'Letzter Flug:' }).last();
   await pace(350);
-  await shot('08-bemerkungen-vor-naechstem-flug.png');
+  await shot('09-bemerkung-ansehen.png');
   await page.keyboard.press('Escape');
   await remarksReadOnly.waitFor({ state: 'hidden' });
 
   step('open evaluation and trigger pdf');
   await page.goto(`${baseUrl}/course/${courseId}/evaluation`);
   await waitUi();
-  await closeOfflineBannerIfVisible();
   await pace(350);
-  await shot('09-kursbericht-pdf.png');
+  await shot('10-kursbericht-pdf.png');
 
   const evalCard = page.locator('.ant-card').filter({ hasText: 'Kursauswertung' }).first();
   await tap(evalCard.locator('.ant-card-extra button.ant-btn-primary'));

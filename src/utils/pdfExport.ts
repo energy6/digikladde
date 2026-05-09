@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf';
 import { db } from '../db/database';
 import type { CourseType, Flight, Student } from '../models/types';
+import { dateFormatter, durationFormatter, timeFormatter } from './DatetimeFormatter';
 
 type StudentDayGroup = {
   student: Student;
@@ -24,20 +25,6 @@ const pad2 = (value: number) => String(value).padStart(2, '0');
 const toLocalDayKey = (isoDate: string) => {
   const date = new Date(isoDate);
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
-};
-
-const formatDuration = (startTime: string, endTime?: string) => {
-  if (!endTime) return '-';
-
-  const start = new Date(startTime).getTime();
-  const end = new Date(endTime).getTime();
-  const diffMs = end - start;
-  if (!Number.isFinite(diffMs) || diffMs <= 0) return '-';
-
-  const totalMinutes = Math.floor(diffMs / 60000);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return `${hours}h ${pad2(minutes)}m`;
 };
 
 const getTableColumns = (courseType: CourseType): TableColumn[] => {
@@ -99,7 +86,7 @@ const getFlightCellValue = (flight: Flight, rowNo: number, courseType: CourseTyp
     no: String(rowNo),
     startTime: timeFormatter.format(startDate),
     landingTime: endDate ? timeFormatter.format(endDate) : '-',
-    duration: formatDuration(flight.startTime, flight.endTime),
+    duration: durationFormatter(startDate.getTime(), endDate ? endDate.getTime() : undefined),
     maneuvers: flight.maneuvers.length ? flight.maneuvers.join(', ') : '-',
     terrainTeacher: `${terrain} / ${teacher}`,
     startLeader: flight.details?.startLeiter ?? '-',
@@ -124,15 +111,6 @@ const getFlightCellValue = (flight: Flight, rowNo: number, courseType: CourseTyp
 export const generatePDF = async (courseId: number) => {
   const course = await db.courses.get(courseId);
   if (!course) return;
-
-  const dateFormatter = new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: undefined,
-  });
-  const timeFormatter = new Intl.DateTimeFormat(undefined, {
-    dateStyle: undefined,
-    timeStyle: 'short',
-  });
 
   const flights = await db.flights.where('courseId').equals(courseId).toArray();
 

@@ -1,68 +1,47 @@
-import { useState, type SyntheticEvent } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { db } from '../db/database';
-import type { Student } from '../models/types';
+import { Form, Input, InputNumber } from 'antd';
 
-const StudentForm = () => {
-  const { id } = useParams();
-  const navigate = useNavigate();
-  const [name, setName] = useState('');
-  const [glider, setGlider] = useState('');
-  const [color, setColor] = useState('');
+export type StudentFields = {
+  name: string;
+  glider: string;
+  color: string;
+  totalFlights: number;
+};
 
-  const handleSubmit = async (e: SyntheticEvent) => {
-    e.preventDefault();
-    const student: Student = { name, glider, color, totalFlights: 0 };
-    const studentId = Number(await db.students.add(student));
-    if (id) {
-      const course = await db.courses.get(Number(id));
-      if (course) {
-        course.students.push({ ...student, id: studentId });
-        await db.courses.update(Number(id), { students: course.students });
-      }
-    }
-    await navigate(id ? `/course/${id}` : '/');
-  };
+type Props = {
+  value: StudentFields;
+  onChange: (value: StudentFields) => void;
+};
 
+const StudentForm = ({ value, onChange }: Props) => {
   return (
-    <div>
-      <h2 className="text-xl font-semibold mb-4">Schüler hinzufügen</h2>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="block">Name:</label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="border p-2 w-full"
-            required
-          />
-        </div>
-        <div>
-          <label className="block">Schirm:</label>
-          <input
-            type="text"
-            value={glider}
-            onChange={(e) => setGlider(e.target.value)}
-            className="border p-2 w-full"
-            required
-          />
-        </div>
-        <div>
-          <label className="block">Farbe:</label>
-          <input
-            type="text"
-            value={color}
-            onChange={(e) => setColor(e.target.value)}
-            className="border p-2 w-full"
-            required
-          />
-        </div>
-        <button type="submit" className="bg-blue-500 text-white px-4 py-2 rounded">
-          Hinzufügen
-        </button>
-      </form>
-    </div>
+    <Form layout="vertical" size="small" requiredMark={false} style={{ width: '100%' }}>
+      <Form.Item label={<>Name <span style={{ color: '#ff4d4f' }}>*</span></>} style={{ marginBottom: 8, width: '100%' }}>
+        <Input
+          value={value.name}
+          onChange={(e) => onChange({ ...value, name: e.target.value })}
+        />
+      </Form.Item>
+      <Form.Item label={<>Schirm <span style={{ color: '#ff4d4f' }}>*</span></>} style={{ marginBottom: 8, width: '100%' }}>
+        <Input
+          value={value.glider}
+          onChange={(e) => onChange({ ...value, glider: e.target.value })}
+        />
+      </Form.Item>
+      <Form.Item label={<>Farbe <span style={{ color: '#ff4d4f' }}>*</span></>} style={{ marginBottom: 8, width: '100%' }}>
+        <Input
+          value={value.color}
+          onChange={(e) => onChange({ ...value, color: e.target.value })}
+        />
+      </Form.Item>
+      <Form.Item label="Bisherige Flüge" style={{ marginBottom: 0, width: '100%' }}>
+        <InputNumber
+          min={0}
+          value={value.totalFlights}
+          onChange={(v) => onChange({ ...value, totalFlights: v ?? 0 })}
+          style={{ width: '100%' }}
+        />
+      </Form.Item>
+    </Form>
   );
 };
 

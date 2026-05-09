@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { db } from '../db/database';
 import type { Course, Flight, FlightDetails } from '../models/types';
+import { dateFormatter, durationFormatter, timeFormatter } from '../utils/DatetimeFormatter';
 import { generatePDF } from '../utils/pdfExport';
 import CourseHeader from './CourseHeader';
 
@@ -14,13 +15,9 @@ const renderFlightDetails = (details?: FlightDetails) => {
   if (!details) return null;
 
   const rows: string[] = [];
-  if (details.terrain) rows.push(`Gelände: ${details.terrain}`);
-  if (details.teacher) rows.push(`Lehrer: ${details.teacher}`);
-  if (details.startLeiter) rows.push(`Startleiter: ${details.startLeiter}`);
-  if (details.startPlace) rows.push(`Startplatz: ${details.startPlace}`);
-  if (details.startTeacher) rows.push(`Lehrer am Start: ${details.startTeacher}`);
-  if (details.landPlace) rows.push(`Landeplatz: ${details.landPlace}`);
-  if (details.landTeacher) rows.push(`Lehrer am Landeplatz: ${details.landTeacher}`);
+  if (details.terrain) rows.push(`Gelände: ${details.terrain} / ${details.teacher ?? '-'}`);
+  if (details.startPlace) rows.push(`Startplatz: ${details.startPlace} / ${details.startTeacher ?? '-'}`);
+  if (details.landPlace) rows.push(`Landeplatz: ${details.landPlace} / ${details.landTeacher ?? '-'}`);
 
   if (!rows.length) return null;
 
@@ -73,7 +70,7 @@ const CourseEvaluation = () => {
 
         <Card
           size="small"
-          bodyStyle={{ padding: 12 }}
+          styles={{ body: { padding: 12 } }}
           title="Kursauswertung"
           extra={<Button type="primary" icon={<FontAwesomeIcon icon={faFilePdf} />} onClick={() => generatePDF(Number(id))}/>}
           variant="outlined"
@@ -98,21 +95,19 @@ const CourseEvaluation = () => {
                           label: `${student.name} (${studentFlights.length ?? 0} ${studentFlights.length === 1 ? 'Flug' : 'Flüge' })`,
                           children: studentFlights.length ? (
                             <Space orientation="vertical" size="small" style={{ width: '100%' }}>
-                              {studentFlights.map((flight) => (
+                              {studentFlights.map((flight, idx) => (
                                 <Card key={flight.id} size="small" styles={{ body: { padding: 10 } }} variant="outlined">
                                   <Space orientation="vertical" size={2} style={{ width: '100%' }}>
                                     <Text>
-                                      Start: {new Date(flight.startTime).toLocaleString()}
+                                      Flug #{idx + 1}:
+                                      &nbsp;{dateFormatter.format(new Date(flight.startTime))}
+                                      &nbsp;{timeFormatter.format(new Date(flight.startTime))}
+                                      &nbsp;- {flight.endTime ? timeFormatter.format(new Date(flight.endTime)) : 'laufend'}
+                                      &nbsp;| {durationFormatter(Date.parse(flight.startTime), flight.endTime ? Date.parse(flight.endTime) : undefined)}
                                     </Text>
-                                    <Text>
-                                      Ende: {flight.endTime ? new Date(flight.endTime).toLocaleString() : 'laufend'}
-                                    </Text>
-                                    {course.courseType !== 'Grundkurs' ? (
-                                      <Text>
-                                        Manöver: {flight.maneuvers.join(', ') || 'Keine'}
-                                      </Text>
-                                    ) : null}
+                                    {flight.maneuvers && <Text>Manöver: {flight.maneuvers.join(', ')}</Text>}
                                     {renderFlightDetails(flight.details)}
+                                    {flight.remarks && <Text>{flight.remarks.map(r => (<div>{r}</div>))}</Text>}
                                   </Space>
                                 </Card>
                               ))}

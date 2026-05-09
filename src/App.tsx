@@ -7,10 +7,8 @@ import { BrowserRouter, HashRouter, Route, Routes } from 'react-router-dom';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import CourseDetail from './components/CourseDetail';
 import CourseEvaluation from './components/CourseEvaluation';
-import CourseForm from './components/CourseForm';
 import CourseList from './components/CourseList';
 import FlightRecorder from './components/FlightRecorder';
-import StudentForm from './components/StudentForm';
 
 const { Header, Content, Footer } = Layout;
 
@@ -82,11 +80,8 @@ function App() {
         <Content className="app-content" style={{ padding: 24, maxWidth: 1200, margin: '0 auto', width: '100%' }}>
           <Routes>
             <Route path="/" element={<CourseList />} />
-            <Route path="/course/new" element={<CourseForm />} />
             <Route path="/course/:id" element={<CourseDetail />} />
             <Route path="/course/:id/evaluation" element={<CourseEvaluation />} />
-            <Route path="/course/:id/edit" element={<CourseForm />} />
-            <Route path="/course/:id/add-student" element={<StudentForm />} />
             <Route path="/course/:id/flight" element={<FlightRecorder />} />
           </Routes>
         </Content>

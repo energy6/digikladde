@@ -8,6 +8,9 @@ import { db } from '../db/database';
 import type { Course, Flight, FlightDetails, Student } from '../models/types';
 import { maneuvers } from '../models/types';
 import CourseHeader from './CourseHeader';
+import type { StudentFields } from './StudentForm';
+import StudentForm from './StudentForm';
+import StudentListItem from './StudentListItem';
 
 const { Text } = Typography;
 const LANDING_PENDING_MS = 5 * 60 * 1000;
@@ -75,13 +78,6 @@ const CourseDetail = () => {
   const speechRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
 
   const isPendingLanding = (flight: Flight) => Boolean(flight.landingPendingUntil && !flight.landingFinalizedAt);
-
-  const formatRemaining = (pendingUntil: string) => {
-    const remainingMs = Math.max(0, Date.parse(pendingUntil) - nowTs);
-    const minutes = Math.floor(remainingMs / 60000);
-    const seconds = Math.floor((remainingMs % 60000) / 1000);
-    return `${minutes}:${String(seconds).padStart(2, '0')}`;
-  };
 
   const refresh = useCallback(async () => {
     if (!id) return;
@@ -657,20 +653,7 @@ const CourseDetail = () => {
                         />,
                       ]}
                     >
-                      <List.Item.Meta
-                        title={<span style={{ color: '#fff', fontWeight: 600 }}>{student.name}</span>}
-                        description={
-                          <div style={{ color: '#e6f4ea' }}>
-                            Start: {new Date(flight.startTime).toLocaleTimeString()}
-                            {maneuversEnabled ? (
-                              <>
-                                <br />
-                                Manöver: {flight.maneuvers.join(', ') || 'Keine ausgewählt'}
-                              </>
-                            ) : null}
-                          </div>
-                        }
-                      />
+                      <StudentListItem student={student} flight={flight} nowTs={nowTs} />
                     </List.Item>
                   );
                 }
@@ -698,16 +681,7 @@ const CourseDetail = () => {
                         />,
                       ]}
                     >
-                      <List.Item.Meta
-                        title={<span style={{ color: '#fff', fontWeight: 600 }}>{student.name}</span>}
-                        description={
-                          <div style={{ color: '#deeeff' }}>
-                            Landung markiert: {flight.landingMarkedAt ? new Date(flight.landingMarkedAt).toLocaleTimeString() : '-'}
-                            <br />
-                            Final in: {flight.landingPendingUntil ? formatRemaining(flight.landingPendingUntil) : '0:00'}
-                          </div>
-                        }
-                      />
+                      <StudentListItem student={student} flight={flight} nowTs={nowTs} />
                     </List.Item>
                   );
                 }
@@ -795,7 +769,7 @@ const CourseDetail = () => {
       </Space>
 
       <Modal
-        title="Schüler zum Kurs hinzufügen"
+        title="Schüler hinzufügen"
         open={addModalVisible}
         onCancel={() => setAddModalVisible(false)}
         onOk={handleAddStudent}
@@ -805,64 +779,37 @@ const CourseDetail = () => {
         <Space orientation="vertical" size="small" style={{ width: '100%' }}>
           <Text strong>Wähle vorhandenen Schüler oder erstelle einen neuen.</Text>
           <Select
+            placeholder="Schüler auswählen"
+            value={addMode === 'new' ? '__new__' : (selectedStudentId ?? undefined)}
+            onChange={(value) => {
+              if (value === '__new__') {
+                setAddMode('new');
+                setSelectedStudentId(null);
+              } else {
+                setAddMode('existing');
+                setSelectedStudentId(Number(value));
+              }
+            }}
             options={[
-              { label: 'Vorhandenen Schüler hinzufügen', value: 'existing' },
-              { label: 'Neuen Schüler erstellen', value: 'new' },
+              { label: 'Neuer Schüler', value: '__new__' },
+              ...[...availableExistingStudents]
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((student) => ({
+                  label: `${student.name} — ${student.glider}`,
+                  value: student.id,
+                })),
             ]}
-            value={addMode}
-            onChange={(value: 'existing' | 'new') => setAddMode(value)}
+            style={{ width: '100%' }}
           />
 
-          {addMode === 'existing' ? (
-            <Select
-              placeholder="Vorhandenen Schüler auswählen"
-              options={availableExistingStudents.map((student) => ({
-                label: `${student.name} — ${student.glider}`,
-                value: student.id,
-              }))}
-              value={selectedStudentId ?? undefined}
-              onChange={(value) => setSelectedStudentId(Number(value))}
-              style={{ width: '100%' }}
-            />
-          ) : (
-            <Form layout="vertical">
-              <Form.Item label="Name" required>
-                <input
-                  value={newStudent.name}
-                  onChange={(event) => setNewStudent({ ...newStudent, name: event.target.value })}
-                  className="ant-input"
-                />
-              </Form.Item>
-              <Form.Item label="Schirm" required>
-                <input
-                  value={newStudent.glider}
-                  onChange={(event) => setNewStudent({ ...newStudent, glider: event.target.value })}
-                  className="ant-input"
-                />
-              </Form.Item>
-              <Form.Item label="Farbe" required>
-                <input
-                  value={newStudent.color}
-                  onChange={(event) => setNewStudent({ ...newStudent, color: event.target.value })}
-                  className="ant-input"
-                />
-              </Form.Item>
-              <Form.Item label="Bisherige Flüge">
-                <input
-                  type="number"
-                  min={0}
-                  value={newStudent.totalFlights}
-                  onChange={(event) => setNewStudent({ ...newStudent, totalFlights: Math.max(0, Number(event.target.value)) })}
-                  className="ant-input"
-                />
-              </Form.Item>
-            </Form>
+          {addMode === 'new' && (
+            <StudentForm value={newStudent} onChange={(value) => setNewStudent(value)} />
           )}
         </Space>
       </Modal>
 
       <Modal
-        title={editStudent ? `Schüler bearbeiten: ${editStudent.name}` : 'Schüler bearbeiten'}
+        title={'Schüler bearbeiten'}
         open={editModalVisible}
         onCancel={() => { setEditModalVisible(false); setEditStudent(null); }}
         onOk={handleEditStudent}
@@ -870,38 +817,10 @@ const CourseDetail = () => {
         cancelButtonProps={{ style: { display: "none" } }}
       >
         {editStudent && (
-          <Form layout="vertical">
-            <Form.Item label="Name" required>
-              <input
-                value={editStudent.name}
-                onChange={(e) => setEditStudent({ ...editStudent, name: e.target.value })}
-                className="ant-input"
-              />
-            </Form.Item>
-            <Form.Item label="Schirm" required>
-              <input
-                value={editStudent.glider}
-                onChange={(e) => setEditStudent({ ...editStudent, glider: e.target.value })}
-                className="ant-input"
-              />
-            </Form.Item>
-            <Form.Item label="Farbe" required>
-              <input
-                value={editStudent.color}
-                onChange={(e) => setEditStudent({ ...editStudent, color: e.target.value })}
-                className="ant-input"
-              />
-            </Form.Item>
-            <Form.Item label="Flüge gesamt">
-              <input
-                type="number"
-                min={0}
-                value={editStudent.totalFlights ?? 0}
-                onChange={(e) => setEditStudent({ ...editStudent, totalFlights: Math.max(0, Number(e.target.value)) })}
-                className="ant-input"
-              />
-            </Form.Item>
-          </Form>
+          <StudentForm
+            value={editStudent as StudentFields}
+            onChange={(value) => setEditStudent({ ...editStudent, ...value })}
+          />
         )}
       </Modal>
 
