@@ -11,7 +11,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint . --max-warnings 0",
-    "preview": "vite preview --host"
+    "preview": "vite preview --host",
+    "capture:guide-media": "node scripts/capture-guide-media.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^6.2.2",
@@ -36,6 +37,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.5.0",
+    "playwright": "^1.59.1",
     "postcss": "^8.5.14",
     "tailwindcss": "^4.2.4",
     "typescript": "~6.0.2",

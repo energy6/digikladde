@@ -42,7 +42,7 @@ const CourseForm = () => {
 
   return (
     <div style={{ maxWidth: 800, margin: '0 auto' }}>
-      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+      <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
         <Typography.Title level={2}>{id ? 'Kurs bearbeiten' : 'Kurs erstellen'}</Typography.Title>
         <Form layout="vertical" size="small" onFinish={handleSubmit}>
           <Form.Item label="Name" required>

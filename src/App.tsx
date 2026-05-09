@@ -1,3 +1,4 @@
+import { QuestionCircleOutlined } from '@ant-design/icons';
 import { faSync } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { Button, Layout, Space, Typography } from 'antd';
@@ -15,6 +16,7 @@ const { Header, Content, Footer } = Layout;
 
 const appVersion = __APP_VERSION__;
 const appTimestampUtc = __BUILD_TIMESTAMP_UTC__;
+const appReadmeUrl = __APP_README_URL__;
 const appBuildDate = new Date(appTimestampUtc);
 const appTimestampLocal = Number.isNaN(appBuildDate.getTime())
   ? appTimestampUtc
@@ -62,6 +64,20 @@ function App() {
           <Typography.Title level={3} style={{ color: '#fff', margin: 0 }}>
             DigiKladde
           </Typography.Title>
+          <a
+            href={appReadmeUrl}
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Hilfe und Benutzeranleitung öffnen"
+            title="Hilfe öffnen"
+            style={{ marginLeft: 'auto' }}
+          >
+            <Button
+              type="text"
+              icon={<QuestionCircleOutlined />}
+              style={{ color: '#fff' }}
+            />
+          </a>
         </Header>
         <Content className="app-content" style={{ padding: 24, maxWidth: 1200, margin: '0 auto', width: '100%' }}>
           <Routes>

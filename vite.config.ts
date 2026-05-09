@@ -45,7 +45,33 @@ function getVersionWithGitInfo(): string {
 
 const appVersion = getVersionWithGitInfo()
 const buildTimestampUtc = new Date().toISOString()
-const repositoryName = process.env.GITHUB_REPOSITORY?.split('/')[1]
+const defaultRepositorySlug = 'energy6/digikladde'
+
+function getRepositorySlug(): string {
+  const envSlug = process.env.GITHUB_REPOSITORY?.trim()
+  if (envSlug) return envSlug
+
+  try {
+    const remoteUrl = execSync('git remote get-url origin', {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    }).trim()
+
+    const sshMatch = remoteUrl.match(/^git@github\.com:(?<slug>[^\s]+?)(?:\.git)?$/)
+    if (sshMatch?.groups?.slug) return sshMatch.groups.slug
+
+    const httpsMatch = remoteUrl.match(/^https?:\/\/github\.com\/(?<slug>[^\s]+?)(?:\.git)?$/)
+    if (httpsMatch?.groups?.slug) return httpsMatch.groups.slug
+  } catch {
+    // Fall back to default slug.
+  }
+
+  return defaultRepositorySlug
+}
+
+const repositorySlug = getRepositorySlug()
+const repositoryName = repositorySlug.split('/')[1]
+const appReadmeUrl = `https://github.com/${repositorySlug}/blob/main/README.md`
 const base = process.env.GITHUB_ACTIONS === 'true' && repositoryName ? `/${repositoryName}/` : '/'
 
 // https://vite.dev/config/
@@ -54,6 +80,7 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
     __BUILD_TIMESTAMP_UTC__: JSON.stringify(buildTimestampUtc),
+    __APP_README_URL__: JSON.stringify(appReadmeUrl),
   },
   plugins: [
     react(),

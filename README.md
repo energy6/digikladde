@@ -1,73 +1,68 @@
-# React + TypeScript + Vite
+# DigiKladde - User-Guide
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+DigiKladde hilft dir dabei, Gleitschirm-Kurse schnell zu organisieren: Kurse anlegen, Schüler verwalten, Flüge dokumentieren und am Ende einen PDF-Kursbericht erzeugen.
 
-Currently, two official plugins are available:
+## Kurzablauf mit Screenshots
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+### 1. Kurs erstellen
+- Öffne die Kursansicht und lege einen neuen Kurs mit Name, Zeitraum und Kurstyp an.
+- Speichere den Kurs.
 
-## React Compiler
+![Kurs erstellen](docs/screenshots/01-kurs-erstellen.png)
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### 2. Kurs wählen
+- Wechsle in die Kursliste.
+- Wähle den gewünschten Kurs aus, um ihn zu öffnen.
 
-## Expanding the ESLint configuration
+![Kurs wählen](docs/screenshots/02-kurs-waehlen.png)
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### 3. Kursdaten bearbeiten
+- Öffne die Kursdetails.
+- Passe z. B. Name, Zeitraum oder Kurstyp an und speichere die Änderungen.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+![Kursdaten bearbeiten](docs/screenshots/03-kursdaten-bearbeiten.png)
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+### 4. Schüler hinzufügen
+- Neu anlegen: Erfasse einen neuen Schüler mit den benötigten Stammdaten.
+- Bestehende hinzufügen: Wähle bereits vorhandene Schüler aus.
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+![Schüler hinzufügen](docs/screenshots/04-schueler-hinzufuegen.png)
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### 5. Schüler bearbeiten und löschen
+- Bearbeiten: Öffne den Schüler, passe Daten an und speichere.
+- Löschen: Entferne den Schüler aus dem Kurs.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+![Schüler bearbeiten und löschen](docs/screenshots/05-schueler-bearbeiten-loeschen.png)
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### 6. Schüler starten (inkl. Manöver)
+- Starte einen Flug für den Schüler.
+- Wähle die durchgeführten Manöver direkt beim Flug.
+
+![Schüler starten mit Manövern](docs/screenshots/06-start-manoever.png)
+
+### 7. Schüler landen und Cooldown
+- Beende den laufenden Flug mit Landung.
+- Cooldown-Optionen:
+  - Überspringen
+  - In Flug zurücksetzen
+
+![Landung und Cooldown](docs/screenshots/07-landung-cooldown.png)
+
+### 8. Bemerkungen erfassen und vor nächstem Flug ansehen
+- Hinterlege Bemerkungen zum Schüler/Flug.
+- Prüfe die Bemerkungen vor dem nächsten Start.
+
+![Bemerkungen](docs/screenshots/08-bemerkungen.png)
+
+### 9. Kursbericht ansehen und PDF erzeugen
+- Oeffne die Kursbericht-Ansicht.
+- Pruefe die Daten und erstelle den PDF-Report.
+
+![Kursbericht und PDF](docs/screenshots/09-kursbericht-pdf.png)
+
+## Hinweis
+Wenn du echte Screenshots hinzufügst, ersetze die Platzhalter durch Markdown-Bildlinks, zum Beispiel:
+
+```md
+![Kurs erstellen](docs/screenshots/01-kurs-erstellen.png)
 ```
