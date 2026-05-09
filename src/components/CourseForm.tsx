@@ -1,7 +1,7 @@
 import { faFloppyDisk } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { Form, Input, Modal, Select } from 'antd';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { db } from '../db/database';
 import type { Course, CourseType } from '../models/types';
 import { courseTypes } from '../models/types';
@@ -13,41 +13,65 @@ type Props = {
   onSaved: () => void;
 };
 
+type CourseFormValues = {
+  name: string;
+  courseType: CourseType;
+  startDate: string;
+  endDate: string;
+};
+
+const initialValues: CourseFormValues = {
+  name: '',
+  courseType: 'Grundkurs',
+  startDate: '',
+  endDate: '',
+};
+
 const CourseForm = ({ open, courseId, onClose, onSaved }: Props) => {
-  const [name, setName] = useState('');
-  const [courseType, setCourseType] = useState<CourseType>('Grundkurs');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [form] = Form.useForm<CourseFormValues>();
 
   useEffect(() => {
-    if (open && courseId) {
-      const load = async () => {
-        const course = await db.courses.get(courseId);
-        if (course) {
-          setName(course.name);
-          setCourseType(course.courseType ?? 'Grundkurs');
-          setStartDate(course.startDate);
-          setEndDate(course.endDate);
-        }
-      };
-      void load();
-    } else if (open && !courseId) {
-      setName('');
-      setCourseType('Grundkurs');
-      setStartDate('');
-      setEndDate('');
+    if (!open) return;
+
+    if (!courseId) {
+      form.resetFields();
+      return;
     }
-  }, [open, courseId]);
+
+    const load = async () => {
+      const course = await db.courses.get(courseId);
+      if (!course) return;
+
+      form.setFieldsValue({
+        name: course.name,
+        courseType: course.courseType ?? 'Grundkurs',
+        startDate: course.startDate,
+        endDate: course.endDate,
+      });
+    };
+
+    void load();
+  }, [courseId, form, open]);
 
   const handleSave = async () => {
-    if (!name.trim()) return;
-    const data = { name: name.trim(), courseType, startDate, endDate };
+    const values = await form.validateFields();
+    const data = {
+      name: values.name.trim(),
+      courseType: values.courseType,
+      startDate: values.startDate,
+      endDate: values.endDate,
+    };
+
+    if (!data.name) return;
+
     if (courseId) {
       await db.courses.update(courseId, data);
     } else {
       const course: Course = { ...data, students: [] };
       await db.courses.add(course);
     }
+
+    form.resetFields();
     onSaved();
     onClose();
   };
@@ -56,28 +80,35 @@ const CourseForm = ({ open, courseId, onClose, onSaved }: Props) => {
     <Modal
       title={courseId ? 'Kurs bearbeiten' : 'Kurs erstellen'}
       open={open}
-      onCancel={onClose}
-      onOk={handleSave}
+      onCancel={() => {
+        form.resetFields();
+        onClose();
+      }}
+      onOk={() => void handleSave()}
       okText={<FontAwesomeIcon icon={faFloppyDisk} />}
       cancelButtonProps={{ style: { display: 'none' } }}
     >
-      <Form layout="vertical" size="small" requiredMark={false}>
-        <Form.Item label={<>Name <span style={{ color: '#ff4d4f' }}>*</span></>} style={{ marginBottom: 8 }}>
-          <Input value={name} onChange={(e) => setName(e.target.value)} />
+      <Form
+        form={form}
+        layout="vertical"
+        size="small"
+        requiredMark={false}
+        initialValues={initialValues}
+      >
+        <Form.Item name="name" label={<>Name <span style={{ color: '#ff4d4f' }}>*</span></>} style={{ marginBottom: 8 }}>
+          <Input />
         </Form.Item>
-        <Form.Item label={<>Kursart <span style={{ color: '#ff4d4f' }}>*</span></>} style={{ marginBottom: 8 }}>
+        <Form.Item name="courseType" label={<>Kursart <span style={{ color: '#ff4d4f' }}>*</span></>} style={{ marginBottom: 8 }}>
           <Select
-            value={courseType}
-            onChange={(value) => setCourseType(value)}
             options={courseTypes.map((type) => ({ label: type, value: type }))}
             style={{ width: '100%' }}
           />
         </Form.Item>
-        <Form.Item label={<>Startdatum <span style={{ color: '#ff4d4f' }}>*</span></>} style={{ marginBottom: 8 }}>
-          <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+        <Form.Item name="startDate" label={<>Startdatum <span style={{ color: '#ff4d4f' }}>*</span></>} style={{ marginBottom: 8 }}>
+          <Input type="date" />
         </Form.Item>
-        <Form.Item label={<>Enddatum <span style={{ color: '#ff4d4f' }}>*</span></>} style={{ marginBottom: 0 }}>
-          <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+        <Form.Item name="endDate" label={<>Enddatum <span style={{ color: '#ff4d4f' }}>*</span></>} style={{ marginBottom: 0 }}>
+          <Input type="date" />
         </Form.Item>
       </Form>
     </Modal>

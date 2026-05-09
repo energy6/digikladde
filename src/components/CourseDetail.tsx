@@ -8,7 +8,6 @@ import { db } from '../db/database';
 import type { Course, Flight, FlightDetails, Student } from '../models/types';
 import { maneuvers } from '../models/types';
 import CourseHeader from './CourseHeader';
-import type { StudentFields } from './StudentForm';
 import StudentForm from './StudentForm';
 import StudentListItem from './StudentListItem';
 
@@ -818,7 +817,7 @@ const CourseDetail = () => {
       >
         {editStudent && (
           <StudentForm
-            value={editStudent as StudentFields}
+            value={editStudent}
             onChange={(value) => setEditStudent({ ...editStudent, ...value })}
           />
         )}

@@ -611,7 +611,7 @@ try {
       steps: 5,
       label: 'timelapse: 5 Minuten Finalize in 5 Sekunden',
     });
-  } catch (error) {
+  } catch {
     console.log('Skipping resume flight step due to timing issues');
   }
 
