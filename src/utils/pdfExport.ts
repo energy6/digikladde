@@ -277,7 +277,6 @@ export const generatePDF = async (courseId: number) => {
     marginLeft,
     { size: 11, lineGap: 5, maxWidth: maxTextWidth },
   );
-  writeText(`Erstellt am: ${new Date().toLocaleString()}`, marginLeft, { size: 9, lineGap: 4, maxWidth: maxTextWidth });
   y += 4;
 
   if (!dayGroups.length) {
@@ -328,6 +327,28 @@ export const generatePDF = async (courseId: number) => {
 
     y += 3;
   });
+
+  const createdAt = new Date().toLocaleString();
+  const footerText = `Erstellt am: ${createdAt} · mit DigiKladde v${__APP_VERSION__}`;
+  const totalPages = doc.getNumberOfPages();
+  for (let pageIndex = 1; pageIndex <= totalPages; pageIndex++) {
+    doc.setPage(pageIndex);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(150, 150, 150);
+    doc.text(
+      footerText,
+      marginLeft,
+      pageHeight - 5,
+    );
+    doc.text(
+      `${pageIndex} / ${totalPages}`,
+      doc.internal.pageSize.getWidth() - marginRight,
+      pageHeight - 5,
+      { align: 'right' },
+    );
+    doc.setTextColor(0, 0, 0);
+  }
 
   doc.save(`Kursbericht_${course.name.replaceAll(' ', '_')}.pdf`);
 };
