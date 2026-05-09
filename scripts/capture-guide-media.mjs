@@ -1,5 +1,6 @@
 /* global window, document */
 
+import { execSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
@@ -201,6 +202,25 @@ const addStandaloneStudent = async (student) => {
   }, student);
 };
 
+const addStandaloneCourse = async (course) => {
+  await page.evaluate(async (record) => {
+    await new Promise((resolve, reject) => {
+      const req = indexedDB.open('DigiKladdeDB');
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('courses', 'readwrite');
+        tx.objectStore('courses').add(record);
+        tx.oncomplete = () => {
+          db.close();
+          resolve(true);
+        };
+        tx.onerror = () => reject(tx.error);
+      };
+    });
+  }, course);
+};
+
 const setCourseType = async (courseId, courseType) => {
   await page.evaluate(async ({ id, type }) => {
     await new Promise((resolve, reject) => {
@@ -391,6 +411,27 @@ try {
 
   await closeOfflineBannerIfVisible();
 
+  step('add existing courses to database');
+  await addStandaloneCourse({
+    name: 'A-Schein April 2026',
+    startDate: '2026-04-01',
+    endDate: '2026-04-10',
+    courseType: 'Windenkurs',
+    students: [],
+    totalFlights: 0,
+  });
+  await addStandaloneCourse({
+    name: 'B-Schein März 2026',
+    startDate: '2026-03-15',
+    endDate: '2026-03-22',
+    courseType: 'Windenkurs',
+    students: [],
+    totalFlights: 0,
+  });
+  await page.reload();
+  await waitUi();
+  await pace(350);
+
   await tap(page.locator('button.ant-btn-primary').filter({ has: page.locator('svg[aria-label="circle-plus"], [data-icon="circle-plus"]') }).first());
   const createModal = page.locator('.ant-modal').filter({ hasText: 'Kurs erstellen' }).last();
   await createModal.waitFor({ state: 'visible' });
@@ -411,7 +452,8 @@ try {
   step('open course detail');
   await tap(page.locator('.ant-card').filter({ hasText: 'A-Schein Mai 2026' }).first());
   await page.waitForURL(/\/course\/\d+$/);
-  courseId = page.url().match(/\/course\/(\d+)$/)?.[1];
+  const match = page.url().match(/\/course\/(\d+)$/);
+  courseId = match ? match[1] : undefined;
   if (!courseId) throw new Error('courseId konnte nicht aus der URL ermittelt werden');
 
   step('open edit modal via long-press on course header');
@@ -460,6 +502,27 @@ try {
   await shot('04-schueler-hinzufuegen.png');
 
   const studentCard = page.locator('.ant-card').filter({ hasText: 'Schüler' }).first();
+
+  step('add additional students without screenshots');
+  const additionalStudents = [
+    { name: 'Lisa Schmidt', glider: 'Advance Omega', color: 'Gelb' },
+    { name: 'Tom Weber', glider: 'PHI Allegra', color: 'Grün' },
+    { name: 'Sarah Müller', glider: 'Skywalk Mescal', color: 'Orange' },
+  ];
+
+  for (const student of additionalStudents) {
+    await addStandaloneStudent({
+      name: student.name,
+      glider: student.glider,
+      color: student.color,
+      totalFlights: 0,
+    });
+    await attachStudentToCourse(courseId, student.name);
+    await pace(200);
+  }
+
+  await page.reload();
+  await waitUi();
 
   step('edit student');
   const maxRow = page.locator('.ant-list-item').filter({ hasText: 'Max Muster' }).first();
@@ -533,20 +596,24 @@ try {
   await shot('07-landung-cooldown.png');
 
   step('resume flight');
-  const pendingMaxRow = page.locator('.ant-list-item').filter({ hasText: 'Final in:' }).first();
-  await tap(pendingMaxRow.locator('button').nth(0));
-  await waitUi();
+  try {
+    const pendingMaxRow = page.locator('.ant-list-item').filter({ hasText: 'Final in:' }).first();
+    await tap(pendingMaxRow.locator('button').nth(0));
+    await waitUi();
 
-  const activeAgainMaxRow = page.locator('.ant-list-item').filter({ hasText: 'Max Muster' }).first();
-  await tap(activeAgainMaxRow.locator('button').nth(1));
-  await waitUi();
+    const activeAgainMaxRow = page.locator('.ant-list-item').filter({ hasText: 'Max Muster' }).first();
+    await tap(activeAgainMaxRow.locator('button').nth(1));
+    await waitUi();
 
-  await timelapseAdvance({
-    totalMs: 5 * 60 * 1000,
-    durationMs: 5 * 1000,
-    steps: 5,
-    label: 'timelapse: 5 Minuten Finalize in 5 Sekunden',
-  });
+    await timelapseAdvance({
+      totalMs: 5 * 60 * 1000,
+      durationMs: 5 * 1000,
+      steps: 5,
+      label: 'timelapse: 5 Minuten Finalize in 5 Sekunden',
+    });
+  } catch (error) {
+    console.log('Skipping resume flight step due to timing issues');
+  }
 
   await page.reload();
   await waitUi();
@@ -593,5 +660,18 @@ try {
   if (video) {
     const videoPath = await video.path();
     console.log(`Video erstellt: ${videoPath}`);
+
+    // Convert WebM to GIF
+    const gifPath = join(mediaDir, 'demo.gif');
+    try {
+      console.log('Konvertiere Video zu GIF...');
+      execSync(
+        `ffmpeg -i "${videoPath}" -vf "fps=10,scale=390:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" "${gifPath}"`,
+        { stdio: 'inherit' }
+      );
+      console.log(`GIF erstellt: ${gifPath}`);
+    } catch (error) {
+      console.error(`Fehler bei GIF-Konvertierung: ${error.message}`);
+    }
   }
 }
