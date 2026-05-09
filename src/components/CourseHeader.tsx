@@ -130,7 +130,7 @@ const CourseHeader = ({ course, prev, next, editable = false, onCourseUpdated }:
       onTouchStart={handleLongPressStart}
       onTouchEnd={clearLongPressTimer}
       onTouchCancel={clearLongPressTimer}
-      style={{ width: '100%', cursor: editable ? 'pointer' : 'default' }}
+      style={{ width: '100%', minWidth: 0, cursor: editable ? 'pointer' : 'default' }}
     >
       <CourseTitle course={course} />
     </div>
@@ -170,7 +170,7 @@ const CourseHeader = ({ course, prev, next, editable = false, onCourseUpdated }:
       </div>
 
       {compactHeader ? (
-        <Space direction="vertical" size="small" style={{ width: '100%' }}>
+        <Space orientation="vertical" size="small" style={{ width: '100%' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
             {prev && <Button type="link" icon={<LeftOutlined />} onClick={prev} />}
             {next && <Button type="link" icon={<RightOutlined />} onClick={next} />}
@@ -178,7 +178,7 @@ const CourseHeader = ({ course, prev, next, editable = false, onCourseUpdated }:
           {titleContent}
         </Space>
       ) : (
-        <Space direction="vertical" size="small" style={{ width: '100%' }}>
+        <Space orientation="vertical" size="small" style={{ width: '100%' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center', columnGap: 12 }}>
             <div style={{ justifySelf: 'start' }}>
               {prev && <Button type="link" icon={<LeftOutlined />} onClick={prev} />}

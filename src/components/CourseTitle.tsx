@@ -1,4 +1,4 @@
-import { Space, Typography } from "antd";
+import { Typography } from "antd";
 import type { Course } from "../models/types";
 
 const formatDate = (date: string) => {
@@ -13,15 +13,15 @@ const formatDate = (date: string) => {
 
 const CourseTitle = ({course}: {course: Course}) => {
   return (
-    <Space direction="vertical" size={2} align="center" style={{ width: '100%' }}>
-      <Typography.Title level={3} style={{ margin: 0, textAlign: 'center', whiteSpace: 'nowrap' }}>
+    <div style={{ width: '100%', minWidth: 0, overflow: 'hidden', textAlign: 'center' }}>
+      <Typography.Title level={3} ellipsis={{ tooltip: course.name }} style={{ margin: 0 }}>
         {course.name}
       </Typography.Title>
-      <Typography.Text type="secondary" style={{ display: 'block', textAlign: 'center' }}>
+      <Typography.Text type="secondary" style={{ display: 'block' }}>
         {course.courseType && <><strong>{course.courseType}</strong> &middot; </>}
         {formatDate(course.startDate)} – {formatDate(course.endDate)}
       </Typography.Text>
-    </Space>
+    </div>
 );
 }
 

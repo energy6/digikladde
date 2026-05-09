@@ -106,7 +106,7 @@ const CourseList = () => {
                 styles={{ body: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 12 } }}
                 onClick={() => !deleteMode && navigate(`/course/${course.id}`)}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
                   {deleteMode && (
                     <Checkbox
                       checked={course.id !== undefined && selectedCourses.has(course.id)}
