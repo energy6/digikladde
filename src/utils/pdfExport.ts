@@ -265,7 +265,8 @@ export const generatePDF = async (courseId: number) => {
     const dayTitle = `Kurstag ${dayGroup.dayLabel}`;
     const columns = getTableColumns(course.courseType);
     const printDayHeader = (continuation = false) => {
-      ensureSpace(14);
+      ensureSpace(22);
+      if (y === 16) y += 8;
       writeText(continuation ? `${dayTitle} (Fortsetzung)` : dayTitle, marginLeft, {
         bold: true,
         size: 13,
