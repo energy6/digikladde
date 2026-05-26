@@ -45,6 +45,22 @@ const AddStudentModal = ({
         <Select
           placeholder="Schüler auswählen"
           value={addMode === 'new' ? '__new__' : (selectedStudentId ?? undefined)}
+          showSearch={{
+            filterOption: (input, option) => {
+              if (!option) return false;
+              const normalizedInput = input.trim().toLocaleLowerCase('de-DE');
+              if (!normalizedInput) return true;
+
+              const searchName = typeof option.searchName === 'string'
+                ? option.searchName
+                : '';
+
+              return searchName
+                .toLocaleLowerCase('de-DE')
+                .includes(normalizedInput);
+            },
+          }}
+          notFoundContent="Kein Schüler gefunden"
           onChange={(value) => {
             if (value === '__new__') {
               onModeChange('new');
@@ -55,12 +71,13 @@ const AddStudentModal = ({
             }
           }}
           options={[
-            { label: 'Neuer Schüler', value: '__new__' },
+            { label: 'Neuer Schüler', value: '__new__', searchName: '' },
             ...[...availableExistingStudents]
               .sort((a, b) => a.name.localeCompare(b.name))
               .map((student) => ({
                 label: `${student.name} — ${student.glider}`,
                 value: student.id,
+                searchName: student.name,
               })),
           ]}
           style={{ width: '100%' }}
