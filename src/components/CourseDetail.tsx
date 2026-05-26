@@ -1,14 +1,14 @@
-import { EditOutlined, PlusOutlined } from '@ant-design/icons';
-import { faBackwardStep, faBan, faCircleExclamation, faForwardStep, faPlaneArrival, faPlaneDeparture, faTrashCan } from '@fortawesome/free-solid-svg-icons';
+import { PlusOutlined } from '@ant-design/icons';
+import { faTrashCan } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { Button, Card, Checkbox, List, Modal, Popconfirm, Space, Typography } from 'antd';
+import { Button, Card, List, Modal, Popconfirm, Space, Typography } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { db } from '../db/database';
 import type { Course, Flight, FlightDetails, Student } from '../models/types';
 import CourseHeader from './CourseHeader';
+import { ActiveStudentListItem, IdleStudentListItem, PendingStudentListItem } from './courseStudentList';
 import { AddStudentModal, EditStudentModal, RemarksModal, StartFlightModal } from './modals';
-import StudentListItem from './StudentListItem';
 
 const { Text } = Typography;
 const LANDING_PENDING_MS = 5 * 60 * 1000;
@@ -39,6 +39,25 @@ type SpeechRecognitionLike = {
 };
 
 type SpeechRecognitionConstructorLike = new () => SpeechRecognitionLike;
+
+type ActiveEntry = {
+  kind: 'active';
+  student: Student;
+  flight: Flight;
+};
+
+type PendingEntry = {
+  kind: 'pending';
+  student: Student;
+  flight: Flight;
+};
+
+type IdleEntry = {
+  kind: 'idle';
+  student: Student;
+};
+
+type StudentListEntry = ActiveEntry | PendingEntry | IdleEntry;
 
 declare global {
   interface Window {
@@ -217,24 +236,24 @@ const CourseDetail = () => {
     [flights],
   );
 
-  const activeEntries = useMemo(() => {
+  const activeEntries = useMemo<ActiveEntry[]>(() => {
     if (!course) return [];
     return activeFlights
       .map((flight) => {
         const student = course.students.find((s) => s.id === flight.studentId);
-        return student ? { flight, student } : null;
+        return student ? { kind: 'active', flight, student } : null;
       })
-      .filter((entry): entry is { flight: Flight; student: Student } => entry !== null);
+      .filter((entry): entry is ActiveEntry => entry !== null);
   }, [activeFlights, course]);
 
-  const pendingEntries = useMemo(() => {
+  const pendingEntries = useMemo<PendingEntry[]>(() => {
     if (!course) return [];
     return pendingFlights
       .map((flight) => {
         const student = course.students.find((s) => s.id === flight.studentId);
-        return student ? { flight, student } : null;
+        return student ? { kind: 'pending', flight, student } : null;
       })
-      .filter((entry): entry is { flight: Flight; student: Student } => entry !== null);
+      .filter((entry): entry is PendingEntry => entry !== null);
   }, [pendingFlights, course]);
 
   const notFlyingStudents = useMemo(() => {
@@ -245,25 +264,13 @@ const CourseDetail = () => {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [activeFlights, pendingFlights, course]);
 
-  const combinedStudentEntries = useMemo(() => {
-    const active = activeEntries.map((entry) => ({
-      kind: 'active' as const,
-      student: entry.student,
-      flight: entry.flight,
-    }));
-
-    const pending = pendingEntries.map((entry) => ({
-      kind: 'pending' as const,
-      student: entry.student,
-      flight: entry.flight,
-    }));
-
-    const notFlying = notFlyingStudents.map((student) => ({
-      kind: 'idle' as const,
+  const combinedStudentEntries = useMemo<StudentListEntry[]>(() => {
+    const notFlying: IdleEntry[] = notFlyingStudents.map((student) => ({
+      kind: 'idle',
       student,
     }));
 
-    return [...active, ...pending, ...notFlying];
+    return [...activeEntries, ...pendingEntries, ...notFlying];
   }, [activeEntries, pendingEntries, notFlyingStudents]);
 
   const hasRemarksOnLastFlightByStudentId = useMemo(() => {
@@ -623,141 +630,66 @@ const CourseDetail = () => {
               size="small"
               dataSource={combinedStudentEntries}
               renderItem={(entry) => {
-                if (entry.kind === 'active') {
-                  const { student, flight } = entry;
-                  return (
-                    <List.Item
-                      onDoubleClick={() => openRemarksModal(flight, student)}
-                      style={{
-                        background: '#1f5f3a',
-                        borderRadius: 8,
-                        paddingInline: 12,
-                        paddingBlock: 6,
-                        marginBottom: 6,
-                      }}
-                      actions={[
-                        <Popconfirm
-                          title="Flug abbrechen?"
-                          okText="Ja"
-                          cancelText="Nein"
-                          onConfirm={() => handleAbortFlight(flight.id!)}
-                        >
-                          <Button danger icon={<FontAwesomeIcon icon={faBan} />} />
-                        </Popconfirm>,
-                        <Button
-                          type="primary"
-                          onClick={() => handleLandFlight(flight.id!)}
-                          icon={<FontAwesomeIcon icon={faPlaneArrival} />}
-                        />,
-                      ]}
-                    >
-                      <StudentListItem student={student} flight={flight} nowTs={nowTs} />
-                    </List.Item>
-                  );
-                }
-
-                if (entry.kind === 'pending') {
-                  const { student, flight } = entry;
-                  return (
-                    <List.Item
-                      onDoubleClick={() => openRemarksModal(flight, student)}
-                      style={{
-                        background: '#1765ad',
-                        borderRadius: 8,
-                        paddingInline: 12,
-                        paddingBlock: 6,
-                        marginBottom: 6,
-                      }}
-                      actions={[
-                        <Button
-                          onClick={() => handleResumeFlight(flight.id!)}
-                          icon={<FontAwesomeIcon icon={faBackwardStep} />}
-                        />,
-                        <Button
-                          onClick={() => handleTerminateFlight(flight.id!)}
-                          icon={<FontAwesomeIcon icon={faForwardStep} />}
-                        />,
-                      ]}
-                    >
-                      <StudentListItem student={student} flight={flight} nowTs={nowTs} />
-                    </List.Item>
-                  );
-                }
-
-                const { student } = entry;
-                const studentId = student.id;
-                const isSelected = studentId ? selectedStudentIds.includes(studentId) : false;
-                const showRemarksIndicator = studentId ? hasRemarksOnLastFlightByStudentId.get(studentId) === true : false;
-
-                return (
-                  <List.Item
-                    onClick={() => {
-                      if (deleteMode && studentId) {
-                        handleToggleStudentSelection(studentId);
-                      }
-                    }}
-                    onDoubleClick={() => {
-                      if (!deleteMode) {
-                        void openLastFlightRemarksModal(student);
-                      }
-                    }}
-                    style={deleteMode ? {
-                      cursor: 'pointer',
-                      background: isSelected ? '#fff7e6' : undefined,
-                      borderRadius: 8,
-                      paddingInline: 8,
-                      paddingBlock: 6,
-                    } : { paddingBlock: 6 }}
-                    extra={deleteMode ? (
-                      <Checkbox
-                        checked={isSelected}
-                        onClick={(event) => event.stopPropagation()}
-                        onChange={() => {
-                          if (studentId) {
-                            handleToggleStudentSelection(studentId);
-                          }
+                switch (entry.kind) {
+                  case 'active':
+                    return (
+                      <ActiveStudentListItem
+                        student={entry.student}
+                        flight={entry.flight}
+                        nowTs={nowTs}
+                        onOpenRemarks={openRemarksModal}
+                        onAbortFlight={(flightId) => {
+                          void handleAbortFlight(flightId);
+                        }}
+                        onLandFlight={(flightId) => {
+                          void handleLandFlight(flightId);
                         }}
                       />
-                    ) : undefined}
-                    actions={deleteMode ? [] : [
-                      <Space orientation="horizontal" size="small" align="center">
-                        <Button
-                          icon={<EditOutlined />}
-                          onClick={() => {
-                            setEditStudent({ ...student });
-                            setEditModalVisible(true);
-                          }}
-                        />
-                        <Button
-                          type="primary"
-                          icon={<FontAwesomeIcon icon={faPlaneDeparture} />}
-                          onClick={() => {
-                            setSelectedFlightStudent(student);
-                            setSelectedManeuvers([]);
-                            setFlightDetails(course?.flightDefaults ?? {});
-                            setStartModalVisible(true);
-                          }}
-                        />
-                      </Space>,
-                    ]}
-                  >
-                    <List.Item.Meta
-                      title={(
-                        <span>
-                          {student.name} ({student.totalFlights ?? 0})
-                          {showRemarksIndicator ? (
-                            <FontAwesomeIcon
-                              icon={faCircleExclamation}
-                              style={{ color: '#d48806', marginLeft: 8 }}
-                              title="Letzter Flug enthält Bemerkungen"
-                            />
-                          ) : null}
-                        </span>
-                      )}
-                      description={`${student.glider} — ${student.color}`}
-                    />
-                  </List.Item>
-                );
+                    );
+                  case 'pending':
+                    return (
+                      <PendingStudentListItem
+                        student={entry.student}
+                        flight={entry.flight}
+                        nowTs={nowTs}
+                        onOpenRemarks={openRemarksModal}
+                        onResumeFlight={(flightId) => {
+                          void handleResumeFlight(flightId);
+                        }}
+                        onTerminateFlight={(flightId) => {
+                          void handleTerminateFlight(flightId);
+                        }}
+                      />
+                    );
+                  case 'idle': {
+                    const studentId = entry.student.id;
+                    const isSelected = studentId ? selectedStudentIds.includes(studentId) : false;
+                    const showRemarksIndicator = studentId ? hasRemarksOnLastFlightByStudentId.get(studentId) === true : false;
+
+                    return (
+                      <IdleStudentListItem
+                        student={entry.student}
+                        deleteMode={deleteMode}
+                        isSelected={isSelected}
+                        showRemarksIndicator={showRemarksIndicator}
+                        onToggleStudentSelection={handleToggleStudentSelection}
+                        onOpenLastFlightRemarks={openLastFlightRemarksModal}
+                        onEditStudent={(student) => {
+                          setEditStudent({ ...student });
+                          setEditModalVisible(true);
+                        }}
+                        onStartFlight={(student) => {
+                          setSelectedFlightStudent(student);
+                          setSelectedManeuvers([]);
+                          setFlightDetails(course?.flightDefaults ?? {});
+                          setStartModalVisible(true);
+                        }}
+                      />
+                    );
+                  }
+                  default:
+                    return null;
+                }
               }}
             />
           ) : (
