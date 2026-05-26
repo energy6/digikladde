@@ -1,14 +1,13 @@
 import { EditOutlined, PlusOutlined } from '@ant-design/icons';
-import { faBackwardStep, faBan, faCheck, faCircleExclamation, faFloppyDisk, faForwardStep, faMicrophone, faPlaneArrival, faPlaneDeparture, faTrashCan } from '@fortawesome/free-solid-svg-icons';
+import { faBackwardStep, faBan, faCircleExclamation, faForwardStep, faPlaneArrival, faPlaneDeparture, faTrashCan } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { Button, Card, Checkbox, Form, Input, List, Modal, Popconfirm, Select, Space, Typography } from 'antd';
+import { Button, Card, Checkbox, List, Modal, Popconfirm, Space, Typography } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { db } from '../db/database';
 import type { Course, Flight, FlightDetails, Student } from '../models/types';
-import { maneuvers } from '../models/types';
 import CourseHeader from './CourseHeader';
-import StudentForm from './StudentForm';
+import { AddStudentModal, EditStudentModal, RemarksModal, StartFlightModal } from './modals';
 import StudentListItem from './StudentListItem';
 
 const { Text } = Typography;
@@ -767,191 +766,57 @@ const CourseDetail = () => {
         </Card>
       </Space>
 
-      <Modal
-        title="Schüler hinzufügen"
+      <AddStudentModal
         open={addModalVisible}
+        addMode={addMode}
+        selectedStudentId={selectedStudentId}
+        newStudent={newStudent}
+        availableExistingStudents={availableExistingStudents}
         onCancel={() => setAddModalVisible(false)}
         onOk={handleAddStudent}
-        okText={<FontAwesomeIcon icon={faFloppyDisk} />}
-        cancelButtonProps={{ style: { display: "none" } }}
-      >
-        <Space orientation="vertical" size="small" style={{ width: '100%' }}>
-          <Text strong>Wähle vorhandenen Schüler oder erstelle einen neuen.</Text>
-          <Select
-            placeholder="Schüler auswählen"
-            value={addMode === 'new' ? '__new__' : (selectedStudentId ?? undefined)}
-            onChange={(value) => {
-              if (value === '__new__') {
-                setAddMode('new');
-                setSelectedStudentId(null);
-              } else {
-                setAddMode('existing');
-                setSelectedStudentId(Number(value));
-              }
-            }}
-            options={[
-              { label: 'Neuer Schüler', value: '__new__' },
-              ...[...availableExistingStudents]
-                .sort((a, b) => a.name.localeCompare(b.name))
-                .map((student) => ({
-                  label: `${student.name} — ${student.glider}`,
-                  value: student.id,
-                })),
-            ]}
-            style={{ width: '100%' }}
-          />
+        onModeChange={setAddMode}
+        onSelectedStudentIdChange={setSelectedStudentId}
+        onNewStudentChange={setNewStudent}
+      />
 
-          {addMode === 'new' && (
-            <StudentForm value={newStudent} onChange={(value) => setNewStudent(value)} />
-          )}
-        </Space>
-      </Modal>
-
-      <Modal
-        title={'Schüler bearbeiten'}
+      <EditStudentModal
         open={editModalVisible}
-        onCancel={() => { setEditModalVisible(false); setEditStudent(null); }}
+        editStudent={editStudent}
+        onCancel={() => {
+          setEditModalVisible(false);
+          setEditStudent(null);
+        }}
         onOk={handleEditStudent}
-        okText={<FontAwesomeIcon icon={faFloppyDisk} />}
-        cancelButtonProps={{ style: { display: "none" } }}
-      >
-        {editStudent && (
-          <StudentForm
-            value={editStudent}
-            onChange={(value) => setEditStudent({ ...editStudent, ...value })}
-          />
-        )}
-      </Modal>
+        onEditStudentChange={setEditStudent}
+      />
 
-      <Modal
-        title={selectedFlightStudent ? `Flug starten: ${selectedFlightStudent.name}` : 'Flug starten'}
+      <StartFlightModal
         open={startModalVisible}
+        course={course}
+        selectedFlightStudent={selectedFlightStudent}
+        flightDetails={flightDetails}
+        selectedManeuvers={selectedManeuvers}
+        maneuversEnabled={maneuversEnabled}
+        startLeiterOptions={startLeiterOptions}
         onCancel={() => setStartModalVisible(false)}
         onOk={handleStartFlight}
-        okText={<FontAwesomeIcon icon={faPlaneDeparture} />}
-        cancelButtonProps={{ style: { display: 'none' } }}
-        okButtonProps={{
-          style: { background: '#1f8f3a', borderColor: '#1f8f3a' },
-        }}
-      >
-        <Form layout="vertical">
-          {(course.courseType === 'Grundkurs' || course.courseType === 'Windenkurs') && (
-            <>
-              <Form.Item label="Gelände">
-                <Input
-                  value={flightDetails.terrain ?? ''}
-                  onChange={(e) => setFlightDetails({ ...flightDetails, terrain: e.target.value })}
-                />
-              </Form.Item>
-              <Form.Item label="Lehrer">
-                <Input
-                  value={flightDetails.teacher ?? ''}
-                  onChange={(e) => setFlightDetails({ ...flightDetails, teacher: e.target.value })}
-                />
-              </Form.Item>
-            </>
-          )}
-          {course.courseType === 'Windenkurs' && (
-            <Form.Item label="Startleiter">
-              <Select
-                showSearch
-                allowClear
-                placeholder="Schüler oder Lehrer wählen…"
-                options={startLeiterOptions}
-                value={flightDetails.startLeiter ?? undefined}
-                onChange={(value) => setFlightDetails({ ...flightDetails, startLeiter: value })}
-                style={{ width: '100%' }}
-              />
-            </Form.Item>
-          )}
-          {course.courseType === 'Höhenkurs' && (
-            <>
-              <Form.Item label="Startplatz">
-                <Input
-                  value={flightDetails.startPlace ?? ''}
-                  onChange={(e) => setFlightDetails({ ...flightDetails, startPlace: e.target.value })}
-                />
-              </Form.Item>
-              <Form.Item label="Lehrer am Start">
-                <Input
-                  value={flightDetails.startTeacher ?? ''}
-                  onChange={(e) => setFlightDetails({ ...flightDetails, startTeacher: e.target.value })}
-                />
-              </Form.Item>
-              <Form.Item label="Landeplatz">
-                <Input
-                  value={flightDetails.landPlace ?? ''}
-                  onChange={(e) => setFlightDetails({ ...flightDetails, landPlace: e.target.value })}
-                />
-              </Form.Item>
-              <Form.Item label="Lehrer am Landeplatz">
-                <Input
-                  value={flightDetails.landTeacher ?? ''}
-                  onChange={(e) => setFlightDetails({ ...flightDetails, landTeacher: e.target.value })}
-                />
-              </Form.Item>
-            </>
-          )}
-          {maneuversEnabled ? (
-            <Form.Item label="Manöver">
-              <Checkbox.Group
-                options={maneuvers}
-                value={selectedManeuvers}
-                onChange={(values) => setSelectedManeuvers([...values])}
-                style={{ width: '100%' }}
-              />
-            </Form.Item>
-          ) : null}
-        </Form>
-      </Modal>
+        onFlightDetailsChange={setFlightDetails}
+        onSelectedManeuversChange={setSelectedManeuvers}
+      />
 
-      <Modal
-        title={selectedRemarkFlight ? `Bemerkung: ${selectedRemarkFlight.studentName}` : 'Bemerkung'}
+      <RemarksModal
         open={remarksModalVisible}
+        selectedRemarkFlight={selectedRemarkFlight}
+        remarksReadOnly={remarksReadOnly}
+        remarksContextText={remarksContextText}
+        existingRemarks={existingRemarks}
+        newRemark={newRemark}
+        isListening={isListening}
         onCancel={closeRemarksModal}
-        footer={remarksReadOnly ? null : (
-          <Space orientation="horizontal" size="small" style={{ width: '100%', justifyContent: 'flex-end' }}>
-            <Button
-              onClick={handleToggleDictation}
-              icon={<FontAwesomeIcon icon={faMicrophone} />}
-              type={isListening ? 'primary' : 'default'}
-            />
-            <Button
-              type="primary"
-              style={{ background: '#1f8f3a', borderColor: '#1f8f3a' }}
-              onClick={handleSaveRemark}
-              icon={<FontAwesomeIcon icon={faCheck} />}
-            />
-          </Space>
-        )}
-      >
-        <Space orientation="vertical" size="small" style={{ width: '100%' }}>
-          {remarksContextText ? <Text type="secondary">{remarksContextText}</Text> : null}
-
-          {existingRemarks.length > 0 && (
-            <div>
-              {existingRemarks.map((remark, idx) => (
-                <p key={`${remark}-${idx}`} style={{ marginBottom: 8 }}>
-                  {remark}
-                </p>
-              ))}
-            </div>
-          )}
-
-          {remarksReadOnly && existingRemarks.length === 0 ? (
-            <Text type="secondary">Keine Bemerkungen vorhanden.</Text>
-          ) : null}
-
-          <Form.Item style={{ marginBottom: 0, display: remarksReadOnly ? 'none' : 'block' }}>
-            <Input.TextArea
-              rows={4}
-              value={newRemark}
-              onChange={(event) => setNewRemark(event.target.value)}
-              placeholder="Bemerkung eingeben oder per Mikrofon diktieren"
-            />
-          </Form.Item>
-        </Space>
-      </Modal>
+        onToggleDictation={handleToggleDictation}
+        onSave={handleSaveRemark}
+        onNewRemarkChange={setNewRemark}
+      />
     </div>
   );
 };
