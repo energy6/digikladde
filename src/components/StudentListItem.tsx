@@ -15,8 +15,9 @@ const StudentListItem = ({student, flight, nowTs}: StudentListItemProps) => {
   return (
     <List.Item.Meta
       title={<span style={{ color: '#fff', fontWeight: 600 }}>{student.name}</span>}
-      description={
+      description={<>
         <div style={{ color: '#deeeff' }}>
+          <div>{student.glider} — {student.color}</div>
           <div>
             Flug: {timeFormatter.format(startTime)}
             {landingTime && ` - ${timeFormatter.format(landingTime)}`}
@@ -24,7 +25,7 @@ const StudentListItem = ({student, flight, nowTs}: StudentListItemProps) => {
           </div>
           {flight.maneuvers && <div>{`Manöver: ${flight.maneuvers.join(', ')}`}</div>}
         </div>
-      }
+      </>}
     />
   );
 };
