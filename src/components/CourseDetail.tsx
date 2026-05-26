@@ -4,14 +4,24 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { Button, Card, List, Modal, Popconfirm, Space, Typography } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useFlightSchool } from '../context/FlightSchoolContext';
 import { db } from '../db/database';
 import type { Course, Flight, FlightDetails, Student } from '../models/types';
+import { ALL_FLIGHT_SCHOOLS, extractFlightSchools, sanitizeFlightSchoolName } from '../utils/flightSchool';
 import CourseHeader from './CourseHeader';
 import { ActiveStudentListItem, IdleStudentListItem, PendingStudentListItem } from './courseStudentList';
 import { AddStudentModal, EditStudentModal, RemarksModal, StartFlightModal } from './modals';
 
 const { Text } = Typography;
 const LANDING_PENDING_MS = 5 * 60 * 1000;
+
+const createNewStudentDraft = (flightSchool: string): Student => ({
+  name: '',
+  glider: '',
+  color: '',
+  totalFlights: 0,
+  flightSchool,
+});
 
 type SpeechRecognitionAlternativeLike = {
   transcript: string;
@@ -69,6 +79,7 @@ declare global {
 const CourseDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { activeFlightSchool } = useFlightSchool();
   const [course, setCourse] = useState<Course | null>(null);
   const [allStudents, setAllStudents] = useState<Student[]>([]);
   const [flights, setFlights] = useState<Flight[]>([]);
@@ -76,7 +87,7 @@ const CourseDetail = () => {
   const [startModalVisible, setStartModalVisible] = useState(false);
   const [addMode, setAddMode] = useState<'existing' | 'new'>('existing');
   const [selectedStudentId, setSelectedStudentId] = useState<number | null>(null);
-  const [newStudent, setNewStudent] = useState({ name: '', glider: '', color: '', totalFlights: 0 });
+  const [newStudent, setNewStudent] = useState<Student>(createNewStudentDraft(sanitizeFlightSchoolName(activeFlightSchool)));
   const [selectedFlightStudent, setSelectedFlightStudent] = useState<Student | null>(null);
   const [selectedManeuvers, setSelectedManeuvers] = useState<string[]>([]);
   const [flightDetails, setFlightDetails] = useState<FlightDetails>({});
@@ -291,10 +302,31 @@ const CourseDetail = () => {
     return hasRemarksMap;
   }, [flights]);
 
+  const effectiveFlightSchool = useMemo(() => {
+    if (!course) {
+      return sanitizeFlightSchoolName(activeFlightSchool);
+    }
+
+    if (activeFlightSchool === ALL_FLIGHT_SCHOOLS) {
+      return sanitizeFlightSchoolName(course.flightSchool);
+    }
+
+    return sanitizeFlightSchoolName(activeFlightSchool);
+  }, [activeFlightSchool, course]);
+
+  const flightSchoolOptions = useMemo(() => extractFlightSchools([
+    ...allStudents.map((student) => student.flightSchool),
+    ...(course?.students ?? []).map((student) => student.flightSchool),
+    course?.flightSchool,
+    effectiveFlightSchool,
+  ]), [allStudents, course, effectiveFlightSchool]);
+
   const availableExistingStudents = useMemo(() => {
     if (!course) return [];
-    return allStudents.filter((student) => !course.students.some((courseStudent) => courseStudent.id === student.id));
-  }, [allStudents, course]);
+    return allStudents
+      .filter((student) => sanitizeFlightSchoolName(student.flightSchool) === effectiveFlightSchool)
+      .filter((student) => !course.students.some((courseStudent) => courseStudent.id === student.id));
+  }, [allStudents, course, effectiveFlightSchool]);
 
   const startLeiterOptions = useMemo(() => {
     const opts: { label: string; value: string }[] = [];
@@ -321,14 +353,18 @@ const CourseDetail = () => {
     }
 
     if (addMode === 'new') {
-      const studentId = Number(await db.students.add(newStudent));
-      const createdStudent = { ...newStudent, id: studentId };
+      const studentToCreate: Student = {
+        ...newStudent,
+        flightSchool: effectiveFlightSchool,
+      };
+      const studentId = Number(await db.students.add(studentToCreate));
+      const createdStudent = { ...studentToCreate, id: studentId };
       await db.courses.update(Number(id), { students: [...course.students, createdStudent] });
     }
 
     setAddModalVisible(false);
     setSelectedStudentId(null);
-    setNewStudent({ name: '', glider: '', color: '', totalFlights: 0 });
+    setNewStudent(createNewStudentDraft(effectiveFlightSchool));
     await refresh();
   };
 
@@ -356,9 +392,12 @@ const CourseDetail = () => {
       glider: editStudent.glider,
       color: editStudent.color,
       totalFlights: editStudent.totalFlights,
+      flightSchool: sanitizeFlightSchoolName(editStudent.flightSchool),
     });
     const updatedStudents = course.students.map((s) =>
-      s.id === editStudent.id ? { ...editStudent } : s,
+      s.id === editStudent.id
+        ? { ...editStudent, flightSchool: sanitizeFlightSchoolName(editStudent.flightSchool) }
+        : s,
     );
     await db.courses.update(Number(id), { students: updatedStudents });
     setEditModalVisible(false);
@@ -586,7 +625,10 @@ const CourseDetail = () => {
         prev={() => navigate(`/`)}
         next={() => navigate(`/course/${id}/evaluation`)}
         editable
-        onCourseUpdated={(updatedCourse) => setCourse(updatedCourse)}
+        onCourseUpdated={(updatedCourse) => {
+          setCourse(updatedCourse);
+          void refresh();
+        }}
       />
 
       <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
@@ -618,7 +660,12 @@ const CourseDetail = () => {
                 key="add"
                 type="primary"
                 icon={<PlusOutlined />}
-                onClick={() => setAddModalVisible(true)}
+                onClick={() => {
+                  setAddMode('existing');
+                  setSelectedStudentId(null);
+                  setNewStudent(createNewStudentDraft(effectiveFlightSchool));
+                  setAddModalVisible(true);
+                }}
                 disabled={deleteMode}
               />
             </Space>
@@ -675,7 +722,7 @@ const CourseDetail = () => {
                         onToggleStudentSelection={handleToggleStudentSelection}
                         onOpenLastFlightRemarks={openLastFlightRemarksModal}
                         onEditStudent={(student) => {
-                          setEditStudent({ ...student });
+                          setEditStudent({ ...student, flightSchool: sanitizeFlightSchoolName(student.flightSchool) });
                           setEditModalVisible(true);
                         }}
                         onStartFlight={(student) => {
@@ -703,17 +750,25 @@ const CourseDetail = () => {
         addMode={addMode}
         selectedStudentId={selectedStudentId}
         newStudent={newStudent}
+        activeFlightSchool={effectiveFlightSchool}
+        flightSchoolOptions={flightSchoolOptions}
         availableExistingStudents={availableExistingStudents}
         onCancel={() => setAddModalVisible(false)}
         onOk={handleAddStudent}
-        onModeChange={setAddMode}
+        onModeChange={(mode) => {
+          setAddMode(mode);
+          if (mode === 'new') {
+            setNewStudent(createNewStudentDraft(effectiveFlightSchool));
+          }
+        }}
         onSelectedStudentIdChange={setSelectedStudentId}
-        onNewStudentChange={setNewStudent}
+        onNewStudentChange={(student) => setNewStudent({ ...student })}
       />
 
       <EditStudentModal
         open={editModalVisible}
         editStudent={editStudent}
+        flightSchoolOptions={flightSchoolOptions}
         onCancel={() => {
           setEditModalVisible(false);
           setEditStudent(null);

@@ -1,10 +1,12 @@
 import { LeftOutlined, RightOutlined } from "@ant-design/icons";
 import { faFloppyDisk } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { Button, Card, Form, Input, Modal, Select, Space } from "antd";
+import { AutoComplete, Button, Card, Form, Input, Modal, Select, Space } from "antd";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { db } from "../db/database";
 import { courseTypes, type Course, type CourseType } from "../models/types";
+import { updateCourseWithFlightSchoolRules } from "../utils/courseFlightSchoolUpdate";
+import { extractFlightSchools, sanitizeFlightSchoolName } from "../utils/flightSchool";
 import CourseTitle from "./CourseTitle";
 
 type Props = {
@@ -23,7 +25,9 @@ const CourseHeader = ({ course, prev, next, editable = false, onCourseUpdated }:
     courseType: course.courseType,
     startDate: course.startDate,
     endDate: course.endDate,
+    flightSchool: sanitizeFlightSchoolName(course.flightSchool),
   });
+  const [flightSchoolOptions, setFlightSchoolOptions] = useState<string[]>([]);
 
   const measureRowRef = useRef<HTMLDivElement | null>(null);
   const measurePrevRef = useRef<HTMLDivElement | null>(null);
@@ -79,11 +83,26 @@ const CourseHeader = ({ course, prev, next, editable = false, onCourseUpdated }:
 
   const openEditModal = () => {
     if (!editable) return;
+
+    const loadFlightSchools = async () => {
+      const [allCourses, allStudents] = await Promise.all([
+        db.courses.toArray(),
+        db.students.toArray(),
+      ]);
+      setFlightSchoolOptions(extractFlightSchools([
+        ...allCourses.map((item) => item.flightSchool),
+        ...allStudents.map((item) => item.flightSchool),
+      ]));
+    };
+
+    void loadFlightSchools();
+
     setDraft({
       name: course.name,
       courseType: course.courseType,
       startDate: course.startDate,
       endDate: course.endDate,
+      flightSchool: sanitizeFlightSchoolName(course.flightSchool),
     });
     setEditModalOpen(true);
   };
@@ -100,23 +119,29 @@ const CourseHeader = ({ course, prev, next, editable = false, onCourseUpdated }:
   const handleSave = async () => {
     const trimmedName = draft.name.trim();
     if (!trimmedName) return;
+    const nextFlightSchool = sanitizeFlightSchoolName(draft.flightSchool);
 
-    if (course.id) {
-      await db.courses.update(course.id, {
-        name: trimmedName,
-        courseType: draft.courseType,
-        startDate: draft.startDate,
-        endDate: draft.endDate,
-      });
-    }
-
-    const updatedCourse: Course = {
+    let updatedCourse: Course = {
       ...course,
       name: trimmedName,
       courseType: draft.courseType,
       startDate: draft.startDate,
       endDate: draft.endDate,
+      flightSchool: nextFlightSchool,
     };
+
+    if (course.id) {
+      const persisted = await updateCourseWithFlightSchoolRules(course.id, {
+        name: trimmedName,
+        courseType: draft.courseType,
+        startDate: draft.startDate,
+        endDate: draft.endDate,
+        flightSchool: nextFlightSchool,
+      });
+      if (persisted) {
+        updatedCourse = persisted;
+      }
+    }
 
     onCourseUpdated?.(updatedCourse);
     setEditModalOpen(false);
@@ -216,6 +241,18 @@ const CourseHeader = ({ course, prev, next, editable = false, onCourseUpdated }:
           </Form.Item>
           <Form.Item label={<>Enddatum <span style={{ color: '#ff4d4f' }}>*</span></>} style={{ marginBottom: 0 }}>
             <Input type="date" value={draft.endDate} onChange={(event) => setDraft({ ...draft, endDate: event.target.value })} />
+          </Form.Item>
+          <Form.Item label={<>Flugschule <span style={{ color: '#ff4d4f' }}>*</span></>} style={{ marginTop: 8, marginBottom: 0 }}>
+            <AutoComplete
+              options={flightSchoolOptions.map((school) => ({ value: school }))}
+              showSearch={{
+                filterOption: (input, option) => (option?.value ?? '').toLocaleLowerCase('de-DE').includes(input.toLocaleLowerCase('de-DE')),
+              }}
+              value={draft.flightSchool}
+              onChange={(value) => setDraft({ ...draft, flightSchool: String(value) })}
+            >
+              <Input placeholder="Flugschule eingeben oder auswählen" />
+            </AutoComplete>
           </Form.Item>
         </Form>
       </Modal>

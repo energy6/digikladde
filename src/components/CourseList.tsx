@@ -1,11 +1,13 @@
 import { RightOutlined } from '@ant-design/icons';
 import { faCirclePlus, faTrashCan } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { Button, Card, Checkbox, List, message, Modal, Space, Typography } from 'antd';
-import { useEffect, useState } from 'react';
+import { Button, Card, Checkbox, List, message, Modal, Select, Space, Typography } from 'antd';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useFlightSchool } from '../context/FlightSchoolContext';
 import { db } from '../db/database';
 import type { Course } from '../models/types';
+import { ALL_FLIGHT_SCHOOLS, extractFlightSchools, sanitizeFlightSchoolName } from '../utils/flightSchool';
 import CourseForm from './CourseForm';
 import CourseTitle from './CourseTitle';
 
@@ -14,6 +16,7 @@ const CourseList = () => {
   const [deleteMode, setDeleteMode] = useState(false);
   const [selectedCourses, setSelectedCourses] = useState<Set<number>>(new Set());
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const { activeFlightSchool, setActiveFlightSchool } = useFlightSchool();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -24,7 +27,14 @@ const CourseList = () => {
     void loadCourses();
   }, []);
 
-  const sortedCourses = [...courses].sort((a, b) => {
+  const flightSchoolOptions = useMemo(() => extractFlightSchools(courses.map((course) => course.flightSchool)), [courses]);
+
+  const filteredCourses = useMemo(() => {
+    if (activeFlightSchool === ALL_FLIGHT_SCHOOLS) return courses;
+    return courses.filter((course) => sanitizeFlightSchoolName(course.flightSchool) === activeFlightSchool);
+  }, [activeFlightSchool, courses]);
+
+  const sortedCourses = [...filteredCourses].sort((a, b) => {
     const dateA = a.startDate || '';
     const dateB = b.startDate || '';
     return dateB.localeCompare(dateA) || Number(b.id || 0) - Number(a.id || 0);
@@ -96,6 +106,18 @@ const CourseList = () => {
             </Space>
           </Space>
 
+          <div style={{ paddingInline: 16 }}>
+            <Select
+              value={activeFlightSchool}
+              onChange={(value) => setActiveFlightSchool(String(value))}
+              style={{ width: '100%' }}
+              options={[
+                { label: 'Alle Flugschulen', value: ALL_FLIGHT_SCHOOLS },
+                ...flightSchoolOptions.map((school) => ({ label: school, value: school })),
+              ]}
+            />
+          </div>
+
           <List
             size="small"
             grid={{ gutter: 8, column: 1 }}
@@ -128,10 +150,13 @@ const CourseList = () => {
 
       <CourseForm
         open={createModalOpen}
+        existingFlightSchools={flightSchoolOptions}
+        defaultFlightSchool={activeFlightSchool === ALL_FLIGHT_SCHOOLS ? undefined : activeFlightSchool}
         onClose={() => setCreateModalOpen(false)}
-        onSaved={async () => {
+        onSaved={async (savedCourse) => {
           const allCourses = await db.courses.toArray();
           setCourses(allCourses);
+          setActiveFlightSchool(savedCourse.flightSchool);
         }}
       />
     </>

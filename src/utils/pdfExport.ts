@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import { db } from '../db/database';
 import type { CourseType, Flight, Student } from '../models/types';
 import { dateFormatter, durationFormatter, timeFormatter } from './DatetimeFormatter';
+import { UNKNOWN_FLIGHT_SCHOOL } from './flightSchool';
 
 type StudentDayGroup = {
   student: Student;
@@ -148,6 +149,7 @@ export const generatePDF = async (courseId: number) => {
           glider: '-',
           color: '-',
           totalFlights: 0,
+            flightSchool: UNKNOWN_FLIGHT_SCHOOL,
         };
 
         const student = knownStudent ?? fallbackStudent;
@@ -251,7 +253,7 @@ export const generatePDF = async (courseId: number) => {
 
   writeText(`Kursbericht | ${course.name}`, marginLeft, { bold: true, size: 18, lineGap: 7, maxWidth: maxTextWidth });
   writeText(
-    `${course.courseType} | ${dateFormatter.format(new Date(course.startDate))} - ${dateFormatter.format(new Date(course.endDate))}`,
+    `${course.flightSchool} | ${course.courseType} | ${dateFormatter.format(new Date(course.startDate))} - ${dateFormatter.format(new Date(course.endDate))}`,
     marginLeft,
     { size: 11, lineGap: 5, maxWidth: maxTextWidth },
   );

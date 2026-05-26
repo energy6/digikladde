@@ -37,6 +37,7 @@ export default defineConfig([
     },
     rules: {
       '@typescript-eslint/consistent-type-imports': ['error', { prefer: 'type-imports' }],
+      '@typescript-eslint/no-deprecated': 'warn',
       '@typescript-eslint/no-floating-promises': 'error',
       '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: { attributes: false } }],
     },

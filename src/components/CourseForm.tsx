@@ -1,16 +1,20 @@
 import { faFloppyDisk } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { Form, Input, Modal, Select } from 'antd';
+import { AutoComplete, Form, Input, Modal, Select } from 'antd';
 import { useEffect } from 'react';
 import { db } from '../db/database';
 import type { Course, CourseType } from '../models/types';
 import { courseTypes } from '../models/types';
+import { updateCourseWithFlightSchoolRules } from '../utils/courseFlightSchoolUpdate';
+import { sanitizeFlightSchoolName, UNKNOWN_FLIGHT_SCHOOL } from '../utils/flightSchool';
 
 type Props = {
   open: boolean;
   courseId?: number;
+  existingFlightSchools: string[];
+  defaultFlightSchool?: string;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (savedCourse: Course) => void;
 };
 
 type CourseFormValues = {
@@ -18,6 +22,7 @@ type CourseFormValues = {
   courseType: CourseType;
   startDate: string;
   endDate: string;
+  flightSchool: string;
 };
 
 const initialValues: CourseFormValues = {
@@ -25,16 +30,27 @@ const initialValues: CourseFormValues = {
   courseType: 'Grundkurs',
   startDate: '',
   endDate: '',
+  flightSchool: UNKNOWN_FLIGHT_SCHOOL,
 };
 
-const CourseForm = ({ open, courseId, onClose, onSaved }: Props) => {
+const CourseForm = ({
+  open,
+  courseId,
+  existingFlightSchools,
+  defaultFlightSchool,
+  onClose,
+  onSaved,
+}: Props) => {
   const [form] = Form.useForm<CourseFormValues>();
 
   useEffect(() => {
     if (!open) return;
 
     if (!courseId) {
-      form.resetFields();
+      form.setFieldsValue({
+        ...initialValues,
+        flightSchool: sanitizeFlightSchoolName(defaultFlightSchool),
+      });
       return;
     }
 
@@ -47,11 +63,12 @@ const CourseForm = ({ open, courseId, onClose, onSaved }: Props) => {
         courseType: course.courseType ?? 'Grundkurs',
         startDate: course.startDate,
         endDate: course.endDate,
+        flightSchool: sanitizeFlightSchoolName(course.flightSchool),
       });
     };
 
     void load();
-  }, [courseId, form, open]);
+  }, [courseId, defaultFlightSchool, form, open]);
 
   const handleSave = async () => {
     const values = await form.validateFields();
@@ -60,20 +77,28 @@ const CourseForm = ({ open, courseId, onClose, onSaved }: Props) => {
       courseType: values.courseType,
       startDate: values.startDate,
       endDate: values.endDate,
+      flightSchool: sanitizeFlightSchoolName(values.flightSchool),
     };
 
     if (!data.name) return;
 
     if (courseId) {
-      await db.courses.update(courseId, data);
-    } else {
-      const course: Course = { ...data, students: [] };
-      await db.courses.add(course);
+      const savedCourse = await updateCourseWithFlightSchoolRules(courseId, data);
+      if (!savedCourse) return;
+
+      form.resetFields();
+      onSaved(savedCourse);
+      onClose();
+      return;
     }
 
-    form.resetFields();
-    onSaved();
-    onClose();
+      const course: Course = { ...data, students: [] };
+      const createdId = Number(await db.courses.add(course));
+      const createdCourse: Course = { ...course, id: createdId };
+
+      form.resetFields();
+      onSaved(createdCourse);
+      onClose();
   };
 
   return (
@@ -109,6 +134,16 @@ const CourseForm = ({ open, courseId, onClose, onSaved }: Props) => {
         </Form.Item>
         <Form.Item name="endDate" label={<>Enddatum <span style={{ color: '#ff4d4f' }}>*</span></>} style={{ marginBottom: 0 }}>
           <Input type="date" />
+        </Form.Item>
+        <Form.Item name="flightSchool" label={<>Flugschule <span style={{ color: '#ff4d4f' }}>*</span></>} style={{ marginTop: 8, marginBottom: 0 }}>
+          <AutoComplete
+            options={existingFlightSchools.map((school) => ({ value: school }))}
+            showSearch={{
+              filterOption: (input, option) => (option?.value ?? '').toLocaleLowerCase('de-DE').includes(input.toLocaleLowerCase('de-DE')),
+            }}
+          >
+            <Input placeholder="Flugschule eingeben oder auswählen" />
+          </AutoComplete>
         </Form.Item>
       </Form>
     </Modal>

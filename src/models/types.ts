@@ -8,6 +8,7 @@ export interface Course {
   courseType: CourseType;
   startDate: string;
   endDate: string;
+  flightSchool: string;
   students: Student[];
   flightDefaults?: FlightDetails;
 }
@@ -18,6 +19,7 @@ export interface Student {
   glider: string;
   color: string;
   totalFlights: number;
+  flightSchool: string;
 }
 
 export interface FlightDetails {

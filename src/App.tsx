@@ -9,6 +9,7 @@ import CourseDetail from './components/CourseDetail';
 import CourseEvaluation from './components/CourseEvaluation';
 import CourseList from './components/CourseList';
 import FlightRecorder from './components/FlightRecorder';
+import { FlightSchoolProvider } from './context/FlightSchoolContext';
 
 const { Header, Content, Footer } = Layout;
 
@@ -57,7 +58,8 @@ function App() {
 
   return (
     <Router>
-      <Layout className="app-layout">
+      <FlightSchoolProvider>
+        <Layout className="app-layout">
         <Header className="app-header" style={{ background: '#0a2239', display: 'flex', alignItems: 'center', padding: '0 24px' }}>
           <Typography.Title level={3} style={{ color: '#fff', margin: 0 }}>
             DigiKladde
@@ -137,7 +139,8 @@ function App() {
             </Space>
           </div>
         )}
-      </Layout>
+        </Layout>
+      </FlightSchoolProvider>
     </Router>
   );
 }

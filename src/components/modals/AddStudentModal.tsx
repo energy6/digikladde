@@ -11,6 +11,8 @@ type AddStudentModalProps = {
   addMode: 'existing' | 'new';
   selectedStudentId: number | null;
   newStudent: StudentFields;
+  activeFlightSchool: string;
+  flightSchoolOptions: string[];
   availableExistingStudents: Student[];
   onCancel: () => void;
   onOk: () => void;
@@ -24,6 +26,8 @@ const AddStudentModal = ({
   addMode,
   selectedStudentId,
   newStudent,
+  activeFlightSchool,
+  flightSchoolOptions,
   availableExistingStudents,
   onCancel,
   onOk,
@@ -42,6 +46,7 @@ const AddStudentModal = ({
     >
       <Space orientation="vertical" size="small" style={{ width: '100%' }}>
         <Text strong>Wähle vorhandenen Schüler oder erstelle einen neuen.</Text>
+        <Text type="secondary">Aktive Flugschule: {activeFlightSchool}</Text>
         <Select
           placeholder="Schüler auswählen"
           value={addMode === 'new' ? '__new__' : (selectedStudentId ?? undefined)}
@@ -84,7 +89,7 @@ const AddStudentModal = ({
         />
 
         {addMode === 'new' ? (
-          <StudentForm value={newStudent} onChange={onNewStudentChange} />
+          <StudentForm value={newStudent} flightSchoolOptions={flightSchoolOptions} onChange={onNewStudentChange} />
         ) : null}
       </Space>
     </Modal>

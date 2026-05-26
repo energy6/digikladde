@@ -7,6 +7,7 @@ import StudentForm from '../StudentForm';
 type EditStudentModalProps = {
   open: boolean;
   editStudent: Student | null;
+  flightSchoolOptions: string[];
   onCancel: () => void;
   onOk: () => void;
   onEditStudentChange: (student: Student) => void;
@@ -15,6 +16,7 @@ type EditStudentModalProps = {
 const EditStudentModal = ({
   open,
   editStudent,
+  flightSchoolOptions,
   onCancel,
   onOk,
   onEditStudentChange,
@@ -31,6 +33,7 @@ const EditStudentModal = ({
       {editStudent ? (
         <StudentForm
           value={editStudent}
+          flightSchoolOptions={flightSchoolOptions}
           onChange={(value) => onEditStudentChange({ ...editStudent, ...value })}
         />
       ) : null}
