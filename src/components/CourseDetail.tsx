@@ -587,7 +587,7 @@ const CourseDetail = () => {
         <Card
           size="small"
           styles={{ body: { padding: 12 } }}
-          title="Schüler"
+          title={`Schüler (${course.students.length})`}
           extra={(
             <Space orientation="horizontal" size="small" align="center">
               {deleteMode && selectedStudentIds.length > 0 ? (
