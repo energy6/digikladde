@@ -71,7 +71,14 @@ const CourseEvaluation = () => {
         <Card
           size="small"
           styles={{ body: { padding: 12 } }}
-          title="Kursauswertung"
+          title={
+            <Space orientation="vertical" size={0}>
+              <Text>Kursauswertung</Text>
+              <Text type="secondary" style={{ fontWeight: 400 }}>
+                {studentsSorted.length} Schüler / {flights.length} {flights.length === 1 ? 'Flug' : 'Flüge'}
+              </Text>
+            </Space>
+          }
           extra={<Button type="primary" icon={<FontAwesomeIcon icon={faFilePdf} />} onClick={() => generatePDF(Number(id))}/>}
           variant="outlined"
         >
