@@ -1,12 +1,10 @@
-import { LeftOutlined, RightOutlined } from "@ant-design/icons";
-import { faFloppyDisk } from "@fortawesome/free-solid-svg-icons";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { AutoComplete, Button, Card, Form, Input, Modal, Select, Space } from "antd";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { LeftOutlined, RightOutlined } from '@ant-design/icons';
+import { Button, Card, Space } from 'antd';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { db } from "../db/database";
-import { courseTypes, type Course, type CourseType } from "../models/types";
-import { updateCourseWithFlightSchoolRules } from "../utils/courseFlightSchoolUpdate";
+import type { Course } from '../models/types';
 import { extractFlightSchools, sanitizeFlightSchoolName } from "../utils/flightSchool";
+import CourseForm from "./CourseForm";
 import CourseTitle from "./CourseTitle";
 
 type Props = {
@@ -20,13 +18,6 @@ type Props = {
 const CourseHeader = ({ course, prev, next, editable = false, onCourseUpdated }: Props) => {
   const [compactHeader, setCompactHeader] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
-  const [draft, setDraft] = useState({
-    name: course.name,
-    courseType: course.courseType,
-    startDate: course.startDate,
-    endDate: course.endDate,
-    flightSchool: sanitizeFlightSchoolName(course.flightSchool),
-  });
   const [flightSchoolOptions, setFlightSchoolOptions] = useState<string[]>([]);
 
   const measureRowRef = useRef<HTMLDivElement | null>(null);
@@ -96,14 +87,6 @@ const CourseHeader = ({ course, prev, next, editable = false, onCourseUpdated }:
     };
 
     void loadFlightSchools();
-
-    setDraft({
-      name: course.name,
-      courseType: course.courseType,
-      startDate: course.startDate,
-      endDate: course.endDate,
-      flightSchool: sanitizeFlightSchoolName(course.flightSchool),
-    });
     setEditModalOpen(true);
   };
 
@@ -114,37 +97,6 @@ const CourseHeader = ({ course, prev, next, editable = false, onCourseUpdated }:
       openEditModal();
       clearLongPressTimer();
     }, 550);
-  };
-
-  const handleSave = async () => {
-    const trimmedName = draft.name.trim();
-    if (!trimmedName) return;
-    const nextFlightSchool = sanitizeFlightSchoolName(draft.flightSchool);
-
-    let updatedCourse: Course = {
-      ...course,
-      name: trimmedName,
-      courseType: draft.courseType,
-      startDate: draft.startDate,
-      endDate: draft.endDate,
-      flightSchool: nextFlightSchool,
-    };
-
-    if (course.id) {
-      const persisted = await updateCourseWithFlightSchoolRules(course.id, {
-        name: trimmedName,
-        courseType: draft.courseType,
-        startDate: draft.startDate,
-        endDate: draft.endDate,
-        flightSchool: nextFlightSchool,
-      });
-      if (persisted) {
-        updatedCourse = persisted;
-      }
-    }
-
-    onCourseUpdated?.(updatedCourse);
-    setEditModalOpen(false);
   };
 
   const titleContent = (
@@ -215,47 +167,16 @@ const CourseHeader = ({ course, prev, next, editable = false, onCourseUpdated }:
           </div>
         </Space>
       )}
-
-      <Modal
-        title="Kursinfos bearbeiten"
+      <CourseForm
         open={editModalOpen}
-        onCancel={() => setEditModalOpen(false)}
-        onOk={handleSave}
-        okText={<FontAwesomeIcon icon={faFloppyDisk} />}
-        cancelButtonProps={{ style: { display: "none" } }}
-      >
-        <Form layout="vertical" size="small" requiredMark={false}>
-          <Form.Item label={<>Kursname <span style={{ color: '#ff4d4f' }}>*</span></>} style={{ marginBottom: 8 }}>
-            <Input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
-          </Form.Item>
-          <Form.Item label={<>Kursart <span style={{ color: '#ff4d4f' }}>*</span></>} style={{ marginBottom: 8 }}>
-            <Select
-              options={courseTypes.map((type) => ({ label: type, value: type }))}
-              value={draft.courseType}
-              onChange={(value: CourseType) => setDraft({ ...draft, courseType: value })}
-              style={{ width: '100%' }}
-            />
-          </Form.Item>
-          <Form.Item label={<>Startdatum <span style={{ color: '#ff4d4f' }}>*</span></>} style={{ marginBottom: 8 }}>
-            <Input type="date" value={draft.startDate} onChange={(event) => setDraft({ ...draft, startDate: event.target.value })} />
-          </Form.Item>
-          <Form.Item label={<>Enddatum <span style={{ color: '#ff4d4f' }}>*</span></>} style={{ marginBottom: 0 }}>
-            <Input type="date" value={draft.endDate} onChange={(event) => setDraft({ ...draft, endDate: event.target.value })} />
-          </Form.Item>
-          <Form.Item label={<>Flugschule <span style={{ color: '#ff4d4f' }}>*</span></>} style={{ marginTop: 8, marginBottom: 0 }}>
-            <AutoComplete
-              options={flightSchoolOptions.map((school) => ({ value: school }))}
-              showSearch={{
-                filterOption: (input, option) => (option?.value ?? '').toLocaleLowerCase('de-DE').includes(input.toLocaleLowerCase('de-DE')),
-              }}
-              value={draft.flightSchool}
-              onChange={(value) => setDraft({ ...draft, flightSchool: String(value) })}
-            >
-              <Input placeholder="Flugschule eingeben oder auswählen" />
-            </AutoComplete>
-          </Form.Item>
-        </Form>
-      </Modal>
+        courseId={course.id}
+        existingFlightSchools={flightSchoolOptions}
+        defaultFlightSchool={sanitizeFlightSchoolName(course.flightSchool)}
+        onClose={() => setEditModalOpen(false)}
+        onSaved={(updatedCourse) => {
+          onCourseUpdated?.(updatedCourse);
+        }}
+      />
     </Card>
   );
 };

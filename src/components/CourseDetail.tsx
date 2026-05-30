@@ -5,10 +5,13 @@ import { Button, Card, List, Modal, Popconfirm, Space, Typography } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useFlightSchool } from '../context/FlightSchoolContext';
+import { useRelaySync } from '../context/RelaySyncContext';
 import { db } from '../db/database';
 import type { Course, Flight, FlightDetails, Student } from '../models/types';
 import { ALL_FLIGHT_SCHOOLS, extractFlightSchools, sanitizeFlightSchoolName } from '../utils/flightSchool';
+import { createId } from '../utils/idGenerator';
 import CourseHeader from './CourseHeader';
+import CourseSyncFooter from './CourseSyncFooter';
 import { ActiveStudentListItem, IdleStudentListItem, PendingStudentListItem } from './courseStudentList';
 import { AddStudentModal, EditStudentModal, RemarksModal, StartFlightModal } from './modals';
 
@@ -80,6 +83,7 @@ const CourseDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { activeFlightSchool } = useFlightSchool();
+  const { deviceId, logCourseDelta, subscribeCourseChanges, subscribeSnapshotImports } = useRelaySync();
   const [course, setCourse] = useState<Course | null>(null);
   const [allStudents, setAllStudents] = useState<Student[]>([]);
   const [flights, setFlights] = useState<Flight[]>([]);
@@ -114,6 +118,22 @@ const CourseDetail = () => {
       db.students.toArray(),
       db.flights.where('courseId').equals(Number(id)).toArray(),
     ]);
+
+    // Ensure embedded students have local IDs resolved from students table
+    if (currentCourse) {
+      const needsResolution = currentCourse.students.some((s) => !s.id && s.syncId);
+      if (needsResolution) {
+        const syncIdToId = new Map(
+          students.filter((s) => s.id && s.syncId).map((s) => [s.syncId!, s.id!]),
+        );
+        currentCourse.students = currentCourse.students.map((s) => {
+          if (s.id || !s.syncId) return s;
+          const localId = syncIdToId.get(s.syncId);
+          return localId ? { ...s, id: localId } : s;
+        });
+      }
+    }
+
     setCourse(currentCourse || null);
     setAllStudents(students);
     setFlights(courseFlights);
@@ -132,6 +152,9 @@ const CourseDetail = () => {
 
     for (const pendingFlight of pendingToFinalize) {
       if (!pendingFlight.id) continue;
+      let finalizedFlightSyncId: string | undefined;
+      let finalizedFlightStudentId: number | undefined;
+
       await db.transaction('rw', db.flights, db.students, db.courses, async () => {
         const freshFlight = await db.flights.get(pendingFlight.id!);
         if (!freshFlight || !freshFlight.landingPendingUntil || freshFlight.landingFinalizedAt) return;
@@ -141,29 +164,87 @@ const CourseDetail = () => {
         const finalizedEndTime = freshFlight.endTime ?? freshFlight.landingMarkedAt ?? finalizedAt;
 
         await db.flights.update(freshFlight.id!, {
+          updatedAt: finalizedAt,
+          updatedByDeviceId: deviceId,
           endTime: finalizedEndTime,
           landingFinalizedAt: finalizedAt,
           landingPendingUntil: undefined,
         });
 
+        finalizedFlightSyncId = freshFlight.syncId;
+        finalizedFlightStudentId = freshFlight.studentId;
+
         const student = await db.students.get(freshFlight.studentId);
         if (!student || !student.id) return;
 
         const newTotal = (student.totalFlights ?? 0) + 1;
-        await db.students.update(student.id, { totalFlights: newTotal });
+        await db.students.update(student.id, {
+          totalFlights: newTotal,
+          updatedAt: finalizedAt,
+          updatedByDeviceId: deviceId,
+        });
 
         const currentCourse = await db.courses.get(freshFlight.courseId);
         if (!currentCourse) return;
 
         const updatedStudents = currentCourse.students.map((s) =>
-          s.id === student.id ? { ...s, totalFlights: newTotal } : s,
+          s.id === student.id
+            ? {
+                ...s,
+                totalFlights: newTotal,
+                updatedAt: finalizedAt,
+                updatedByDeviceId: deviceId,
+              }
+            : s,
         );
         await db.courses.update(freshFlight.courseId, { students: updatedStudents });
       });
+
+      if (finalizedFlightSyncId && finalizedFlightStudentId) {
+        const finalizedFlight = await db.flights.where('syncId').equals(finalizedFlightSyncId).first();
+        const finalizedStudent = await db.students.get(finalizedFlightStudentId);
+        const studentSyncId = finalizedStudent?.syncId;
+
+        if (finalizedFlight) {
+          await logCourseDelta({
+            courseId,
+            operation: 'flight_upsert',
+            entitySyncId: finalizedFlightSyncId,
+            payload: {
+              syncId: finalizedFlightSyncId,
+              studentSyncId,
+              studentId: finalizedFlight.studentId,
+              endTime: finalizedFlight.endTime,
+              landingPendingUntil: finalizedFlight.landingPendingUntil,
+              landingFinalizedAt: finalizedFlight.landingFinalizedAt,
+              updatedAt: finalizedFlight.updatedAt,
+              updatedByDeviceId: finalizedFlight.updatedByDeviceId,
+            },
+          });
+        }
+
+        if (finalizedStudent) {
+          await logCourseDelta({
+            courseId,
+            operation: 'student_upsert',
+            entitySyncId: finalizedStudent.syncId ?? createId('student'),
+            payload: {
+              syncId: finalizedStudent.syncId,
+              name: finalizedStudent.name,
+              glider: finalizedStudent.glider,
+              color: finalizedStudent.color,
+              totalFlights: finalizedStudent.totalFlights,
+              flightSchool: finalizedStudent.flightSchool,
+              updatedAt: finalizedStudent.updatedAt,
+              updatedByDeviceId: finalizedStudent.updatedByDeviceId,
+            },
+          });
+        }
+      }
     }
 
     return true;
-  }, [id]);
+  }, [deviceId, id, logCourseDelta]);
 
   useEffect(() => {
     let cancelled = false;
@@ -228,6 +309,22 @@ const CourseDetail = () => {
       window.clearInterval(intervalId);
     };
   }, [finalizePendingFlights, refresh]);
+
+  useEffect(() => {
+    if (!id) return;
+    const courseId = Number(id);
+    return subscribeSnapshotImports(courseId, () => {
+      void refresh();
+    });
+  }, [id, refresh, subscribeSnapshotImports]);
+
+  useEffect(() => {
+    if (!id) return;
+    const courseId = Number(id);
+    return subscribeCourseChanges(courseId, () => {
+      void refresh();
+    });
+  }, [id, refresh, subscribeCourseChanges]);
 
   const activeFlights = useMemo(
     () => flights
@@ -343,23 +440,135 @@ const CourseDetail = () => {
 
   const maneuversEnabled = course?.courseType !== 'Grundkurs';
 
+  const resolveStudentSyncId = useCallback(async (studentId: number): Promise<string | undefined> => {
+    const embeddedStudent = course?.students.find((student) => student.id === studentId);
+    if (embeddedStudent?.syncId) return embeddedStudent.syncId;
+
+    const storedStudent = await db.students.get(studentId);
+    if (!storedStudent) return undefined;
+
+    const now = new Date().toISOString();
+    const syncId = storedStudent.syncId ?? createId('student');
+    const updatedAt = storedStudent.updatedAt ?? now;
+    const updatedByDeviceId = storedStudent.updatedByDeviceId ?? deviceId;
+
+    if (!storedStudent.syncId || !storedStudent.updatedAt || !storedStudent.updatedByDeviceId) {
+      await db.students.update(studentId, {
+        syncId,
+        updatedAt,
+        updatedByDeviceId,
+      });
+    }
+
+    if (course?.id) {
+      const existsInCourse = course.students.some((student) => student.id === studentId);
+      if (existsInCourse) {
+        const nextStudents = course.students.map((student) => (
+          student.id === studentId
+            ? {
+                ...student,
+                syncId: student.syncId ?? syncId,
+                updatedAt: student.updatedAt ?? updatedAt,
+                updatedByDeviceId: student.updatedByDeviceId ?? updatedByDeviceId,
+              }
+            : student
+        ));
+
+        await db.courses.update(course.id, { students: nextStudents });
+      }
+    }
+
+    return syncId;
+  }, [course, deviceId]);
+
+  const logStudentUpsertDelta = useCallback(async (courseId: number, student: Student) => {
+    if (!student.syncId) return;
+
+    await logCourseDelta({
+      courseId,
+      operation: 'student_upsert',
+      entitySyncId: student.syncId,
+      payload: {
+        syncId: student.syncId,
+        name: student.name,
+        glider: student.glider,
+        color: student.color,
+        totalFlights: student.totalFlights,
+        flightSchool: student.flightSchool,
+        updatedAt: student.updatedAt,
+        updatedByDeviceId: student.updatedByDeviceId,
+      },
+    });
+  }, [logCourseDelta]);
+
   const handleAddStudent = async () => {
     if (!course || !id) return;
+    const courseId = Number(id);
+    const now = new Date().toISOString();
 
     if (addMode === 'existing' && selectedStudentId) {
       const student = allStudents.find((item) => item.id === selectedStudentId);
       if (!student) return;
-      await db.courses.update(Number(id), { students: [...course.students, student] });
+      const studentSyncId = student.syncId ?? createId('student');
+      const normalizedStudent: Student = {
+        ...student,
+        syncId: studentSyncId,
+        updatedAt: student.updatedAt ?? now,
+        updatedByDeviceId: student.updatedByDeviceId ?? deviceId,
+      };
+
+      if (student.id) {
+        await db.students.update(student.id, {
+          syncId: normalizedStudent.syncId,
+          updatedAt: normalizedStudent.updatedAt,
+          updatedByDeviceId: normalizedStudent.updatedByDeviceId,
+        });
+      }
+
+      await db.courses.update(courseId, { students: [...course.students, normalizedStudent] });
+      await logCourseDelta({
+        courseId,
+        operation: 'student_upsert',
+        entitySyncId: studentSyncId,
+        payload: {
+          syncId: studentSyncId,
+          name: normalizedStudent.name,
+          glider: normalizedStudent.glider,
+          color: normalizedStudent.color,
+          totalFlights: normalizedStudent.totalFlights,
+          flightSchool: normalizedStudent.flightSchool,
+          updatedAt: normalizedStudent.updatedAt,
+          updatedByDeviceId: normalizedStudent.updatedByDeviceId,
+        },
+      });
     }
 
     if (addMode === 'new') {
       const studentToCreate: Student = {
         ...newStudent,
         flightSchool: effectiveFlightSchool,
+        syncId: createId('student'),
+        updatedAt: now,
+        updatedByDeviceId: deviceId,
       };
       const studentId = Number(await db.students.add(studentToCreate));
       const createdStudent = { ...studentToCreate, id: studentId };
-      await db.courses.update(Number(id), { students: [...course.students, createdStudent] });
+      await db.courses.update(courseId, { students: [...course.students, createdStudent] });
+      await logCourseDelta({
+        courseId,
+        operation: 'student_upsert',
+        entitySyncId: createdStudent.syncId ?? createId('student'),
+        payload: {
+          syncId: createdStudent.syncId,
+          name: createdStudent.name,
+          glider: createdStudent.glider,
+          color: createdStudent.color,
+          totalFlights: createdStudent.totalFlights,
+          flightSchool: createdStudent.flightSchool,
+          updatedAt: createdStudent.updatedAt,
+          updatedByDeviceId: createdStudent.updatedByDeviceId,
+        },
+      });
     }
 
     setAddModalVisible(false);
@@ -370,14 +579,42 @@ const CourseDetail = () => {
 
   const handleStartFlight = async () => {
     if (!selectedFlightStudent?.id || !id) return;
-    await db.flights.add({
-      courseId: Number(id),
+    const courseId = Number(id);
+    const now = new Date().toISOString();
+    const studentSyncId = await resolveStudentSyncId(selectedFlightStudent.id);
+    const flight: Flight = {
+      syncId: createId('flight'),
+      updatedAt: now,
+      updatedByDeviceId: deviceId,
+      courseId,
       studentId: selectedFlightStudent.id,
       maneuvers: maneuversEnabled ? selectedManeuvers : [],
       details: flightDetails,
-      startTime: new Date().toISOString(),
+      startTime: now,
+    };
+    await db.flights.add(flight);
+    await db.courses.update(courseId, { flightDefaults: flightDetails });
+
+    await logCourseDelta({
+      courseId,
+      operation: 'flight_upsert',
+      entitySyncId: flight.syncId ?? createId('flight'),
+      payload: {
+        syncId: flight.syncId,
+        studentSyncId,
+        studentId: flight.studentId,
+        maneuvers: flight.maneuvers,
+        details: flight.details,
+        startTime: flight.startTime,
+        landingMarkedAt: flight.landingMarkedAt,
+        landingPendingUntil: flight.landingPendingUntil,
+        landingFinalizedAt: flight.landingFinalizedAt,
+        endTime: flight.endTime,
+        updatedAt: flight.updatedAt,
+        updatedByDeviceId: flight.updatedByDeviceId,
+      },
     });
-    await db.courses.update(Number(id), { flightDefaults: flightDetails });
+
     setStartModalVisible(false);
     setSelectedFlightStudent(null);
     setSelectedManeuvers([]);
@@ -387,7 +624,13 @@ const CourseDetail = () => {
 
   const handleEditStudent = async () => {
     if (!editStudent || !editStudent.id || !course || !id) return;
+    const courseId = Number(id);
+    const now = new Date().toISOString();
+    const studentSyncId = editStudent.syncId ?? createId('student');
     await db.students.update(editStudent.id, {
+      syncId: studentSyncId,
+      updatedAt: now,
+      updatedByDeviceId: deviceId,
       name: editStudent.name,
       glider: editStudent.glider,
       color: editStudent.color,
@@ -396,35 +639,110 @@ const CourseDetail = () => {
     });
     const updatedStudents = course.students.map((s) =>
       s.id === editStudent.id
-        ? { ...editStudent, flightSchool: sanitizeFlightSchoolName(editStudent.flightSchool) }
+        ? {
+            ...editStudent,
+            syncId: studentSyncId,
+            updatedAt: now,
+            updatedByDeviceId: deviceId,
+            flightSchool: sanitizeFlightSchoolName(editStudent.flightSchool),
+          }
         : s,
     );
-    await db.courses.update(Number(id), { students: updatedStudents });
+    await db.courses.update(courseId, { students: updatedStudents });
+
+    await logCourseDelta({
+      courseId,
+      operation: 'student_upsert',
+      entitySyncId: studentSyncId,
+      payload: {
+        syncId: studentSyncId,
+        name: editStudent.name,
+        glider: editStudent.glider,
+        color: editStudent.color,
+        totalFlights: editStudent.totalFlights,
+        flightSchool: sanitizeFlightSchoolName(editStudent.flightSchool),
+        updatedAt: now,
+        updatedByDeviceId: deviceId,
+      },
+    });
+
     setEditModalVisible(false);
     setEditStudent(null);
     await refresh();
   };
 
   const handleLandFlight = async (flightId: number) => {
+    if (!id) return;
     const now = Date.now();
+    const nowIso = new Date(now).toISOString();
+    const pendingUntilIso = new Date(now + LANDING_PENDING_MS).toISOString();
     await db.flights.update(flightId, {
+      updatedAt: nowIso,
+      updatedByDeviceId: deviceId,
       landingMarkedAt: new Date(now).toISOString(),
-      landingPendingUntil: new Date(now + LANDING_PENDING_MS).toISOString(),
+      landingPendingUntil: pendingUntilIso,
       landingFinalizedAt: undefined,
     });
+    const flight = await db.flights.get(flightId);
+    if (flight?.syncId) {
+      const studentSyncId = await resolveStudentSyncId(flight.studentId);
+      await logCourseDelta({
+        courseId: Number(id),
+        operation: 'flight_upsert',
+        entitySyncId: flight.syncId,
+        payload: {
+          syncId: flight.syncId,
+          studentSyncId,
+          studentId: flight.studentId,
+          landingMarkedAt: nowIso,
+          landingPendingUntil: pendingUntilIso,
+          landingFinalizedAt: undefined,
+          updatedAt: nowIso,
+          updatedByDeviceId: deviceId,
+        },
+      });
+    }
     await refresh();
   };
 
   const handleResumeFlight = async (flightId: number) => {
+    if (!id) return;
+    const now = new Date().toISOString();
     await db.flights.update(flightId, {
+      updatedAt: now,
+      updatedByDeviceId: deviceId,
       landingMarkedAt: undefined,
       landingPendingUntil: undefined,
       landingFinalizedAt: undefined,
     });
+    const flight = await db.flights.get(flightId);
+    if (flight?.syncId) {
+      const studentSyncId = await resolveStudentSyncId(flight.studentId);
+      await logCourseDelta({
+        courseId: Number(id),
+        operation: 'flight_upsert',
+        entitySyncId: flight.syncId,
+        payload: {
+          syncId: flight.syncId,
+          studentSyncId,
+          studentId: flight.studentId,
+          landingMarkedAt: undefined,
+          landingPendingUntil: undefined,
+          landingFinalizedAt: undefined,
+          updatedAt: now,
+          updatedByDeviceId: deviceId,
+        },
+      });
+    }
     await refresh();
   };
 
   const handleTerminateFlight = async (flightId: number) => {
+    if (!id) return;
+    const courseId = Number(id);
+    let finalizedFlightSyncId: string | undefined;
+    let finalizedFlightStudentId: number | undefined;
+
     await db.transaction('rw', db.flights, db.students, db.courses, async () => {
       const flight = await db.flights.get(flightId);
       if (!flight || !flight.id || flight.landingFinalizedAt) return;
@@ -433,30 +751,94 @@ const CourseDetail = () => {
       const finalizedEndTime = flight.endTime ?? flight.landingMarkedAt ?? finalizedAt;
 
       await db.flights.update(flight.id, {
+        updatedAt: finalizedAt,
+        updatedByDeviceId: deviceId,
         endTime: finalizedEndTime,
         landingFinalizedAt: finalizedAt,
         landingPendingUntil: undefined,
       });
 
+      finalizedFlightSyncId = flight.syncId;
+      finalizedFlightStudentId = flight.studentId;
+
       const student = await db.students.get(flight.studentId);
       if (!student || !student.id) return;
 
       const newTotal = (student.totalFlights ?? 0) + 1;
-      await db.students.update(student.id, { totalFlights: newTotal });
+      await db.students.update(student.id, {
+        totalFlights: newTotal,
+        updatedAt: finalizedAt,
+        updatedByDeviceId: deviceId,
+      });
 
       const currentCourse = await db.courses.get(flight.courseId);
       if (!currentCourse) return;
 
       const updatedStudents = currentCourse.students.map((s) =>
-        s.id === student.id ? { ...s, totalFlights: newTotal } : s,
+        s.id === student.id
+          ? {
+              ...s,
+              totalFlights: newTotal,
+              updatedAt: finalizedAt,
+              updatedByDeviceId: deviceId,
+            }
+          : s,
       );
       await db.courses.update(flight.courseId, { students: updatedStudents });
     });
+
+    if (finalizedFlightSyncId && finalizedFlightStudentId) {
+      const finalizedFlight = await db.flights.where('syncId').equals(finalizedFlightSyncId).first();
+      const finalizedStudent = await db.students.get(finalizedFlightStudentId);
+      const studentSyncId = await resolveStudentSyncId(finalizedFlightStudentId);
+
+      if (finalizedFlight) {
+        await logCourseDelta({
+          courseId,
+          operation: 'flight_upsert',
+          entitySyncId: finalizedFlightSyncId,
+          payload: {
+            syncId: finalizedFlightSyncId,
+            studentSyncId,
+            studentId: finalizedFlight.studentId,
+            endTime: finalizedFlight.endTime,
+            landingPendingUntil: finalizedFlight.landingPendingUntil,
+            landingFinalizedAt: finalizedFlight.landingFinalizedAt,
+            updatedAt: finalizedFlight.updatedAt,
+            updatedByDeviceId: finalizedFlight.updatedByDeviceId,
+          },
+        });
+      }
+
+      if (finalizedStudent) {
+        await logStudentUpsertDelta(courseId, finalizedStudent);
+      }
+    }
+
     await refresh();
   };
 
   const handleAbortFlight = async (flightId: number) => {
+    if (!id) return;
+    const flight = await db.flights.get(flightId);
+    const now = new Date().toISOString();
+    const studentSyncId = flight ? await resolveStudentSyncId(flight.studentId) : undefined;
     await db.flights.delete(flightId);
+    if (flight?.syncId) {
+      await logCourseDelta({
+        courseId: Number(id),
+        operation: 'flight_delete',
+        entitySyncId: flight.syncId,
+        payload: {
+          syncId: flight.syncId,
+          studentSyncId,
+          studentId: flight.studentId,
+          updatedAt: now,
+          updatedByDeviceId: deviceId,
+          deletedAt: now,
+        },
+      });
+    }
     await refresh();
   };
 
@@ -480,8 +862,24 @@ const CourseDetail = () => {
 
   const handleDeleteSelectedStudents = async () => {
     if (!course || !id || selectedStudentIds.length === 0) return;
+    const courseId = Number(id);
+    const toDelete = course.students.filter((student) => selectedStudentIds.includes(student.id ?? -1));
     const updatedStudents = course.students.filter((student) => !selectedStudentIds.includes(student.id ?? -1));
-    await db.courses.update(Number(id), { students: updatedStudents });
+    await db.courses.update(courseId, { students: updatedStudents });
+
+    for (const student of toDelete) {
+      if (!student.syncId) continue;
+      await logCourseDelta({
+        courseId,
+        operation: 'student_delete',
+        entitySyncId: student.syncId,
+        payload: {
+          syncId: student.syncId,
+          deletedAt: new Date().toISOString(),
+        },
+      });
+    }
+
     setDeleteMode(false);
     setSelectedStudentIds([]);
     await refresh();
@@ -551,7 +949,35 @@ const CourseDetail = () => {
     }
 
     const updatedRemarks = [...(flight.remarks ?? []), remark];
-    await db.flights.update(selectedRemarkFlight.flightId, { remarks: updatedRemarks });
+    const now = new Date().toISOString();
+    await db.flights.update(selectedRemarkFlight.flightId, {
+      remarks: updatedRemarks,
+      updatedAt: now,
+      updatedByDeviceId: deviceId,
+    });
+    if (id && flight.syncId) {
+      const studentSyncId = await resolveStudentSyncId(flight.studentId);
+      await logCourseDelta({
+        courseId: Number(id),
+        operation: 'flight_upsert',
+        entitySyncId: flight.syncId,
+        payload: {
+          syncId: flight.syncId,
+          studentSyncId,
+          studentId: flight.studentId,
+          maneuvers: flight.maneuvers,
+          remarks: updatedRemarks,
+          details: flight.details,
+          startTime: flight.startTime,
+          landingMarkedAt: flight.landingMarkedAt,
+          landingPendingUntil: flight.landingPendingUntil,
+          landingFinalizedAt: flight.landingFinalizedAt,
+          endTime: flight.endTime,
+          updatedAt: now,
+          updatedByDeviceId: deviceId,
+        },
+      });
+    }
     closeRemarksModal();
     await refresh();
   };
@@ -743,6 +1169,8 @@ const CourseDetail = () => {
             <Text type="secondary">Es sind keine Schüler im Kurs.</Text>
           )}
         </Card>
+
+        <CourseSyncFooter course={course} />
       </Space>
 
       <AddStudentModal

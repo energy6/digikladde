@@ -8,6 +8,7 @@ import { useFlightSchool } from '../context/FlightSchoolContext';
 import { db } from '../db/database';
 import type { Course } from '../models/types';
 import { ALL_FLIGHT_SCHOOLS, extractFlightSchools, sanitizeFlightSchoolName } from '../utils/flightSchool';
+import { parseJoinInvite } from '../utils/parseJoinInvite';
 import CourseForm from './CourseForm';
 import CourseTitle from './CourseTitle';
 
@@ -16,6 +17,7 @@ const CourseList = () => {
   const [deleteMode, setDeleteMode] = useState(false);
   const [selectedCourses, setSelectedCourses] = useState<Set<number>>(new Set());
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [initialJoinInviteRaw, setInitialJoinInviteRaw] = useState<string | undefined>(undefined);
   const { activeFlightSchool, setActiveFlightSchool } = useFlightSchool();
   const navigate = useNavigate();
 
@@ -25,6 +27,28 @@ const CourseList = () => {
       setCourses(allCourses);
     };
     void loadCourses();
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const params = new URLSearchParams(window.location.search);
+    const joinInvite = params.get('joinInvite');
+    if (!joinInvite) return;
+
+    const parsed = parseJoinInvite(joinInvite);
+    params.delete('joinInvite');
+    const nextQuery = params.toString();
+    const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}${window.location.hash}`;
+    window.history.replaceState({}, '', nextUrl);
+
+    if (!parsed) {
+      message.error('Der Share-Link ist ungültig oder unvollständig.');
+      return;
+    }
+
+    setInitialJoinInviteRaw(joinInvite);
+    setCreateModalOpen(true);
   }, []);
 
   const flightSchoolOptions = useMemo(() => extractFlightSchools(courses.map((course) => course.flightSchool)), [courses]);
@@ -69,7 +93,10 @@ const CourseList = () => {
       cancelText: 'Abbrechen',
       onOk: async () => {
         try {
-          await Promise.all(Array.from(selectedCourses).map((id) => db.courses.delete(id)));
+          for (const id of selectedCourses) {
+            await db.courses.delete(id);
+          }
+
           const allCourses = await db.courses.toArray();
           setCourses(allCourses);
           setSelectedCourses(new Set());
@@ -152,6 +179,8 @@ const CourseList = () => {
         open={createModalOpen}
         existingFlightSchools={flightSchoolOptions}
         defaultFlightSchool={activeFlightSchool === ALL_FLIGHT_SCHOOLS ? undefined : activeFlightSchool}
+        initialJoinInviteRaw={initialJoinInviteRaw}
+        onJoinInviteHandled={() => setInitialJoinInviteRaw(undefined)}
         onClose={() => setCreateModalOpen(false)}
         onSaved={async (savedCourse) => {
           const allCourses = await db.courses.toArray();

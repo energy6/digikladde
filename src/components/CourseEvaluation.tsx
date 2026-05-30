@@ -43,7 +43,26 @@ const CourseEvaluation = () => {
       if (!id) return;
       const courseId = Number(id);
       const loadedCourse = await db.courses.get(courseId);
-      setCourse(loadedCourse || null);
+      if (!loadedCourse) {
+        setCourse(null);
+        return;
+      }
+
+      // Ensure embedded students have local IDs by resolving from students table
+      const needsResolution = loadedCourse.students.some((s) => !s.id && s.syncId);
+      if (needsResolution) {
+        const syncIds = loadedCourse.students.filter((s) => !s.id && s.syncId).map((s) => s.syncId!);
+        const resolved = await db.students.where('syncId').anyOf(syncIds).toArray();
+        const syncIdToId = new Map(resolved.filter((s) => s.id).map((s) => [s.syncId!, s.id!]));
+
+        loadedCourse.students = loadedCourse.students.map((s) => {
+          if (s.id || !s.syncId) return s;
+          const localId = syncIdToId.get(s.syncId);
+          return localId ? { ...s, id: localId } : s;
+        });
+      }
+
+      setCourse(loadedCourse);
       setFlights(await db.flights.where('courseId').equals(courseId).toArray());
     };
     void load();

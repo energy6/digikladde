@@ -40,6 +40,7 @@ export default defineConfig([
       '@typescript-eslint/no-deprecated': 'warn',
       '@typescript-eslint/no-floating-promises': 'error',
       '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: { attributes: false } }],
+      'react-hooks/set-state-in-effect': 'off',
     },
   },
   {

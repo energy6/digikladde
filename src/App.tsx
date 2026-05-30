@@ -1,15 +1,17 @@
-import { QuestionCircleOutlined } from '@ant-design/icons';
+import { QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons';
 import { faSync } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { Button, Layout, Space, Typography } from 'antd';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { BrowserRouter, HashRouter, Route, Routes } from 'react-router-dom';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import CourseDetail from './components/CourseDetail';
 import CourseEvaluation from './components/CourseEvaluation';
 import CourseList from './components/CourseList';
 import FlightRecorder from './components/FlightRecorder';
+import { SettingsModal, type SettingsValues } from './components/modals';
 import { FlightSchoolProvider } from './context/FlightSchoolContext';
+import { RelaySyncProvider } from './context/RelaySyncContext';
 
 const { Header, Content, Footer } = Layout;
 
@@ -24,8 +26,76 @@ const appTimestampLocal = Number.isNaN(appBuildDate.getTime())
       timeStyle: 'short',
     }).format(appBuildDate);
 const Router = import.meta.env.BASE_URL === '/' ? BrowserRouter : HashRouter;
+const SETTINGS_STORAGE_KEY = 'digikladde.appSettings';
+
+const readDefaultRelayBaseUrl = (): string => {
+  if (typeof window === 'undefined') return 'https://digikladde.aircursion.de';
+  return window.location.origin;
+};
+
+const deriveDefaultUsername = (): string => {
+  if (typeof window === 'undefined') return 'Pilot';
+
+  const navigatorWithUserAgentData = window.navigator as Navigator & {
+    userAgentData?: { platform?: string };
+  };
+
+  const rawPlatform = navigatorWithUserAgentData.userAgentData?.platform ?? window.navigator.platform ?? '';
+  const platform = rawPlatform.toLowerCase();
+
+  if (platform.includes('mac')) return 'Pilot (Mac)';
+  if (platform.includes('win')) return 'Pilot (Windows)';
+  if (platform.includes('linux')) return 'Pilot (Linux)';
+  if (platform.includes('iphone') || platform.includes('ipad') || platform.includes('android')) return 'Pilot (Mobile)';
+
+  return 'Pilot';
+};
+
+const sanitizeUsername = (rawValue: string): string => rawValue.trim().replace(/\s+/g, ' ').slice(0, 60);
+
+const normalizeRelayBaseUrl = (rawValue: string): string | null => {
+  const trimmed = rawValue.trim();
+  if (!trimmed) return null;
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return null;
+    }
+
+    const normalizedPath = parsed.pathname === '/' ? '' : parsed.pathname.replace(/\/+$/, '');
+    return `${parsed.origin}${normalizedPath}`;
+  } catch {
+    return null;
+  }
+};
+
+const readInitialSettings = (): SettingsValues => {
+  const fallback: SettingsValues = {
+    username: deriveDefaultUsername(),
+    relayBaseUrl: readDefaultRelayBaseUrl(),
+  };
+
+  if (typeof window === 'undefined') return fallback;
+
+  const rawStored = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
+  if (!rawStored) return fallback;
+
+  try {
+    const parsed = JSON.parse(rawStored) as Partial<SettingsValues>;
+
+    const username = sanitizeUsername(typeof parsed.username === 'string' ? parsed.username : '') || fallback.username;
+    const relayBaseUrl = normalizeRelayBaseUrl(typeof parsed.relayBaseUrl === 'string' ? parsed.relayBaseUrl : '') ?? fallback.relayBaseUrl;
+
+    return { username, relayBaseUrl };
+  } catch {
+    return fallback;
+  }
+};
 
 function App() {
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [settings, setSettings] = useState<SettingsValues>(readInitialSettings);
   const registrationRef = useRef<ServiceWorkerRegistration | null>(null);
   const {
     offlineReady: [offlineReady, setOfflineReady],
@@ -56,28 +126,50 @@ function App() {
     await registrationRef.current.update();
   };
 
+  const handleSaveSettings = (nextSettings: SettingsValues) => {
+    setSettings(nextSettings);
+
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(nextSettings));
+    }
+
+    setSettingsModalOpen(false);
+  };
+
   return (
     <Router>
       <FlightSchoolProvider>
-        <Layout className="app-layout">
+        <RelaySyncProvider username={settings.username} relayBaseUrl={settings.relayBaseUrl}>
+          <Layout className="app-layout">
         <Header className="app-header" style={{ background: '#0a2239', display: 'flex', alignItems: 'center', padding: '0 24px' }}>
-          <Typography.Title level={3} style={{ color: '#fff', margin: 0 }}>
-            DigiKladde
-          </Typography.Title>
-          <a
-            href={appReadmeUrl}
-            target="_blank"
-            rel="noreferrer"
-            aria-label="Hilfe und Benutzeranleitung öffnen"
-            title="Hilfe öffnen"
-            style={{ marginLeft: 'auto' }}
-          >
+          <Space size={8} align="center">
+            <Typography.Title level={3} style={{ color: '#fff', margin: 0 }}>
+              DigiKladde
+            </Typography.Title>
+          </Space>
+          <Space size={4} align="center" style={{ marginLeft: 'auto' }}>
+            <a
+              href={appReadmeUrl}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Hilfe und Benutzeranleitung öffnen"
+              title="Hilfe öffnen"
+            >
+              <Button
+                type="text"
+                icon={<QuestionCircleOutlined />}
+                style={{ color: '#fff' }}
+              />
+            </a>
             <Button
               type="text"
-              icon={<QuestionCircleOutlined />}
+              icon={<SettingOutlined />}
+              aria-label="Einstellungen öffnen"
+              title="Einstellungen öffnen"
+              onClick={() => setSettingsModalOpen(true)}
               style={{ color: '#fff' }}
             />
-          </a>
+          </Space>
         </Header>
         <Content className="app-content" style={{ padding: 24, maxWidth: 1200, margin: '0 auto', width: '100%' }}>
           <Routes>
@@ -139,7 +231,15 @@ function App() {
             </Space>
           </div>
         )}
-        </Layout>
+
+          <SettingsModal
+            open={settingsModalOpen}
+            initialValues={settings}
+            onCancel={() => setSettingsModalOpen(false)}
+            onSave={handleSaveSettings}
+          />
+          </Layout>
+        </RelaySyncProvider>
       </FlightSchoolProvider>
     </Router>
   );
