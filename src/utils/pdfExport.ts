@@ -1,12 +1,9 @@
-import jsPDFDefault, { jsPDF as jsPDFNamed } from 'jspdf';
+import { jsPDF as jsPDFNamed } from 'jspdf';
 import type { Course, CourseType, Flight, Student } from '../models/types';
 import { durationFormatter } from './DatetimeFormatter';
 import { UNKNOWN_FLIGHT_SCHOOL } from './flightSchool';
 
 type JsPDFInstance = InstanceType<typeof jsPDFNamed>;
-
-const JsPDFCtor = jsPDFNamed ?? (jsPDFDefault as unknown as typeof jsPDFNamed);
-
 type StudentDayGroup = {
   student: Student;
   flights: Flight[];
@@ -291,7 +288,7 @@ export const createCoursePDFDoc = (
   const totalStudents = courseStatsRows.length;
   const totalFlights = flights.length;
 
-  const doc = new JsPDFCtor();
+  const doc = new jsPDFNamed();
 
   const marginLeft = 12;
   const marginRight = 12;
