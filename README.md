@@ -187,3 +187,26 @@
     </td>
   </tr>
 </table>
+
+## PDF Export Demo (seeded, ohne Browser)
+
+Mit dem Demo-Skript kannst du einen mehrtaegigen Kurs mit reproduzierbaren Zufallsdaten erzeugen und den PDF-Export lokal als Datei schreiben.
+
+Beispiel:
+
+```bash
+npm run demo:pdf-export -- --seed 42 --days 5 --students 7 --output output/kursbericht-seed42.pdf --course-type Windenkurs
+```
+
+Parameter:
+
+- `--seed <zahl>`: reproduzierbare Datengenerierung
+- `--days <zahl>`: Anzahl Kurstage
+- `--students <zahl>`: Anzahl Schueler
+- `--output <pfad>`: Zielpfad der PDF-Datei
+- `--course-type <Grundkurs|Windenkurs|Hoehenkurs>`: Kurstyp fuer Spaltenlayout und Flugdaten
+
+Regeln der Demo-Daten:
+
+- pro Tag und Schueler werden 3-5 Fluege erzeugt
+- jede Flugdauer liegt zwischen 10 und 20 Minuten
