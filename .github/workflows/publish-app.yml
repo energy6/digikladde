@@ -1,17 +1,21 @@
-name: Deploy to GitHub Pages
+name: Build and Publish App
 
 on:
   push:
     branches:
       - main
-    tags:
-      - "v*"
     paths:
-      - "src/**"
+      - "app/**"
+      - "eslint.base.config.js"
+      - "package.json"
+      - "package-lock.json"
       - ".github/workflows/deploy-pages.yml"
   pull_request:
     paths:
-      - "src/**"
+      - "app/**"
+      - "eslint.base.config.js"
+      - "package.json"
+      - "package-lock.json"
       - ".github/workflows/deploy-pages.yml"
   workflow_dispatch:
 
@@ -40,6 +44,7 @@ jobs:
         with:
           node-version-file: package.json
           cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Setup Pages
         if: github.event_name != 'pull_request'
@@ -49,16 +54,16 @@ jobs:
         run: npm ci
 
       - name: Lint app
-        run: npm run lint
+        run: npm run lint:app
 
       - name: Build app
-        run: npm run build
+        run: npm run build:app
 
       - name: Upload Pages artifact
         if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v5
         with:
-          path: dist
+          path: app/dist
 
   deploy:
     needs: build

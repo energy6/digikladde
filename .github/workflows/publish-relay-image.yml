@@ -4,15 +4,18 @@ on:
   push:
     branches:
       - main
-      - relay-mode
-    tags:
-      - "v*"
     paths:
       - "relay/**"
+      - "eslint.base.config.js"
+      - "package.json"
+      - "package-lock.json"
       - ".github/workflows/publish-relay-image.yml"
   pull_request:
     paths:
       - "relay/**"
+      - "eslint.base.config.js"
+      - "package.json"
+      - "package-lock.json"
       - ".github/workflows/publish-relay-image.yml"
   workflow_dispatch:
 
@@ -27,6 +30,22 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint relay
+        run: npm run lint:relay
+
+      - name: Typecheck relay
+        run: npm run typecheck:relay
 
       - name: Compute image owner
         id: vars
