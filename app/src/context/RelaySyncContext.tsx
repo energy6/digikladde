@@ -651,7 +651,9 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl }: RelaySyn
       connectionsRef.current.delete(connection.courseSyncId);
       void updateShareSessionState(connection.courseSyncId, 'idle');
 
-      if (!connection.intentionalClose && connection.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      const canRetryInForeground = typeof document === 'undefined' || !document.hidden;
+
+      if (!connection.intentionalClose && canRetryInForeground && connection.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
         const delay = Math.min(1000 * Math.pow(2, connection.reconnectAttempts), MAX_RECONNECT_DELAY_MS);
         connection.reconnectAttempts += 1;
         connection.reconnectTimer = setTimeout(() => {
@@ -681,6 +683,53 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl }: RelaySyn
   useEffect(() => {
     reconnectCourseSessionRef.current = (courseIdValue: number) => {
       void connectCourseSession(courseIdValue);
+    };
+  }, [connectCourseSession]);
+
+  useEffect(() => {
+    const reconnectSharedSessions = async () => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      if (typeof document !== 'undefined' && document.hidden) return;
+
+      const sessions = await db.shareSessions.toArray();
+      for (const session of sessions) {
+        const course = await db.courses.where('syncId').equals(session.courseSyncId).first();
+        if (!course?.id) continue;
+
+        const connection = connectionsRef.current.get(session.courseSyncId);
+        const isOpen = connection && (connection.ws.readyState === WebSocket.OPEN || connection.ws.readyState === WebSocket.CONNECTING);
+        if (isOpen) continue;
+
+        void connectCourseSession(course.id);
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        void reconnectSharedSessions();
+      }
+    };
+
+    const handleOnline = () => {
+      void reconnectSharedSessions();
+    };
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', handleOnline);
+    }
+
+    void reconnectSharedSessions();
+
+    return () => {
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      }
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('online', handleOnline);
+      }
     };
   }, [connectCourseSession]);
 
