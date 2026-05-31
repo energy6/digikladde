@@ -4,19 +4,19 @@ import { URL } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { relayConfig } from './config.js';
 import {
-    attachSessionToRoom,
-    bufferMessage,
-    canOpenConnectionForIp,
-    createSession,
-    deleteSession,
-    getOrCreateRoom,
-    getRoom,
-    getRoomSessions,
-    getRoomSessionsByDevice,
-    markEventAndCheckRate,
-    registerJoinAttemptAndCheckLimit,
-    snapshotStats,
-    type Session,
+  attachSessionToRoom,
+  bufferMessage,
+  canOpenConnectionForIp,
+  createSession,
+  deleteSession,
+  getOrCreateRoom,
+  getRoom,
+  getRoomSessions,
+  getRoomSessionsByDevice,
+  markEventAndCheckRate,
+  registerJoinAttemptAndCheckLimit,
+  snapshotStats,
+  type Session,
 } from './state.js';
 import type { JoinRequestPayload, RelayEnvelope, RelayErrorCode } from './types.js';
 
@@ -281,7 +281,15 @@ wss.on('connection', (ws, session: Session) => {
       return;
     }
 
-    const parsed = parseEnvelope(String(raw));
+    const rawText = typeof raw === 'string'
+      ? raw
+      : Buffer.isBuffer(raw)
+        ? raw.toString('utf8')
+        : Array.isArray(raw)
+          ? Buffer.concat(raw).toString('utf8')
+          : Buffer.from(new Uint8Array(raw)).toString('utf8');
+
+    const parsed = parseEnvelope(rawText);
     if (!parsed) {
       sendError(session, 'invalid_json', 'Nachricht ist kein gueltiges Relay-JSON.');
       return;
