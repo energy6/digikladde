@@ -1,6 +1,7 @@
 import { faCheck, faMicrophone } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { Button, Form, Input, Modal, Space, Typography } from 'antd';
+import { Button, Checkbox, Form, Input, Modal, Space, Typography } from 'antd';
+import { maneuvers } from '../../models/types';
 
 const { Text } = Typography;
 
@@ -16,11 +17,15 @@ type RemarksModalProps = {
   remarksContextText: string;
   existingRemarks: string[];
   newRemark: string;
+  selectedManeuvers: string[];
+  maneuversEnabled: boolean;
+  canSave: boolean;
   isListening: boolean;
   onCancel: () => void;
   onToggleDictation: () => void;
   onSave: () => void;
   onNewRemarkChange: (value: string) => void;
+  onSelectedManeuversChange: (values: string[]) => void;
 };
 
 const RemarksModal = ({
@@ -30,11 +35,15 @@ const RemarksModal = ({
   remarksContextText,
   existingRemarks,
   newRemark,
+  selectedManeuvers,
+  maneuversEnabled,
+  canSave,
   isListening,
   onCancel,
   onToggleDictation,
   onSave,
   onNewRemarkChange,
+  onSelectedManeuversChange,
 }: RemarksModalProps) => {
   return (
     <Modal
@@ -53,6 +62,7 @@ const RemarksModal = ({
             style={{ background: '#1f8f3a', borderColor: '#1f8f3a' }}
             onClick={onSave}
             icon={<FontAwesomeIcon icon={faCheck} />}
+            disabled={!canSave}
           />
         </Space>
       )}
@@ -80,6 +90,18 @@ const RemarksModal = ({
             value={newRemark}
             onChange={(event) => onNewRemarkChange(event.target.value)}
             placeholder="Bemerkung eingeben oder per Mikrofon diktieren"
+          />
+        </Form.Item>
+
+        <Form.Item
+          label="Manöver"
+          style={{ marginBottom: 0, display: remarksReadOnly || !maneuversEnabled ? 'none' : 'block' }}
+        >
+          <Checkbox.Group
+            options={maneuvers}
+            value={selectedManeuvers}
+            onChange={(values) => onSelectedManeuversChange(values.map((value) => String(value)))}
+            style={{ width: '100%' }}
           />
         </Form.Item>
       </Space>
