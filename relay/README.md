@@ -41,6 +41,14 @@ npm run build
 npm start
 ```
 
+## Lint
+
+From repository root:
+
+```bash
+npm run lint:relay
+```
+
 ## Docker
 
 Build image:

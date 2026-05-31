@@ -18,7 +18,7 @@
       </ul>
     </td>
     <td valign="top" width="360">
-      <img src="docs/media/demo.gif" width="240" alt="DigiKladde Demo">
+      <img src="app/docs/media/demo.gif" width="240" alt="DigiKladde Demo">
     </td>
   </tr>
 </table>
@@ -36,7 +36,7 @@
       </ul>
     </td>
     <td valign="top" width="360">
-      <img src="docs/screenshots/01-kurs-erstellen.png" alt="Kurs erstellen" width="240">
+      <img src="app/docs/screenshots/01-kurs-erstellen.png" alt="Kurs erstellen" width="240">
     </td>
   </tr>
 </table>
@@ -52,7 +52,7 @@
       </ul>
     </td>
     <td valign="top" width="360">
-      <img src="docs/screenshots/02-kurs-waehlen.png" alt="Kurs wählen" width="240">
+      <img src="app/docs/screenshots/02-kurs-waehlen.png" alt="Kurs wählen" width="240">
     </td>
   </tr>
 </table>
@@ -68,7 +68,7 @@
       </ul>
     </td>
     <td valign="top" width="360">
-      <img src="docs/screenshots/03-kursdaten-bearbeiten.png" alt="Kursdaten bearbeiten" width="240">
+      <img src="app/docs/screenshots/03-kursdaten-bearbeiten.png" alt="Kursdaten bearbeiten" width="240">
     </td>
   </tr>
 </table>
@@ -84,7 +84,7 @@
       </ul>
     </td>
     <td valign="top" width="360">
-      <img src="docs/screenshots/04-schueler-hinzufuegen.png" alt="Schüler hinzufügen" width="240">
+      <img src="app/docs/screenshots/04-schueler-hinzufuegen.png" alt="Schüler hinzufügen" width="240">
     </td>
   </tr>
 </table>
@@ -100,7 +100,7 @@
       </ul>
     </td>
     <td valign="top" width="360">
-      <img src="docs/screenshots/05-schueler-bearbeiten-loeschen.png" alt="Schüler bearbeiten und löschen" width="240">
+      <img src="app/docs/screenshots/05-schueler-bearbeiten-loeschen.png" alt="Schüler bearbeiten und löschen" width="240">
     </td>
   </tr>
 </table>
@@ -117,7 +117,7 @@
       </ul>
     </td>
     <td valign="top" width="360">
-      <img src="docs/screenshots/06-start-manoever.png" alt="Schüler starten mit Manövern" width="240">
+      <img src="app/docs/screenshots/06-start-manoever.png" alt="Schüler starten mit Manövern" width="240">
     </td>
   </tr>
 </table>
@@ -134,7 +134,7 @@
       </ul>
     </td>
     <td valign="top" width="360">
-      <img src="docs/screenshots/07-landung-cooldown.png" alt="Landung und Cooldown" width="240">
+      <img src="app/docs/screenshots/07-landung-cooldown.png" alt="Landung und Cooldown" width="240">
     </td>
   </tr>
 </table>
@@ -150,7 +150,7 @@
       </ul>
     </td>
     <td valign="top" width="360">
-      <img src="docs/screenshots/08-bemerkung-vorhanden.png" alt="Bemerkung vorhanden" width="240">
+      <img src="app/docs/screenshots/08-bemerkung-vorhanden.png" alt="Bemerkung vorhanden" width="240">
     </td>
   </tr>
 </table>
@@ -167,7 +167,7 @@
       </ul>
     </td>
     <td valign="top" width="360">
-      <img src="docs/screenshots/09-bemerkung-ansehen.png" alt="Bemerkung ansehen" width="240">
+      <img src="app/docs/screenshots/09-bemerkung-ansehen.png" alt="Bemerkung ansehen" width="240">
     </td>
   </tr>
 </table>
@@ -183,30 +183,11 @@
       </ul>
     </td>
     <td valign="top" width="360">
-      <img src="docs/screenshots/10-kursbericht-pdf.png" alt="Kursbericht und PDF" width="240">
+      <img src="app/docs/screenshots/10-kursbericht-pdf.png" alt="Kursbericht und PDF" width="240">
     </td>
   </tr>
 </table>
 
-## PDF Export Demo (seeded, ohne Browser)
+## Technische Hinweise
 
-Mit dem Demo-Skript kannst du einen mehrtaegigen Kurs mit reproduzierbaren Zufallsdaten erzeugen und den PDF-Export lokal als Datei schreiben.
-
-Beispiel:
-
-```bash
-npm run demo:pdf-export -- --seed 42 --days 5 --students 7 --output output/kursbericht-seed42.pdf --course-type Windenkurs
-```
-
-Parameter:
-
-- `--seed <zahl>`: reproduzierbare Datengenerierung
-- `--days <zahl>`: Anzahl Kurstage
-- `--students <zahl>`: Anzahl Schueler
-- `--output <pfad>`: Zielpfad der PDF-Datei
-- `--course-type <Grundkurs|Windenkurs|Hoehenkurs>`: Kurstyp fuer Spaltenlayout und Flugdaten
-
-Regeln der Demo-Daten:
-
-- pro Tag und Schueler werden 3-5 Fluege erzeugt
-- jede Flugdauer liegt zwischen 10 und 20 Minuten
+Entwicklerdokumentation, PDF-Export-Demo und Setup findest du in [DEVELOPMENT.md](DEVELOPMENT.md).

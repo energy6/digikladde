@@ -8,8 +8,29 @@ updates:
       time: "04:00"
       timezone: Europe/Berlin
     open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "@types/node"
+        update-types:
+          - "version-update:semver-major"
     groups:
-      root-npm:
+      workspace-tools-npm:
+        patterns:
+          - "*"
+
+  - package-ecosystem: npm
+    directory: /app
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "@types/node"
+        update-types:
+          - "version-update:semver-major"
+    groups:
+      app-npm:
         patterns:
           - "*"
 
@@ -21,6 +42,10 @@ updates:
       time: "04:00"
       timezone: Europe/Berlin
     open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "@types/node"
+        update-types:
+          - "version-update:semver-major"
     groups:
       relay-npm:
         patterns:

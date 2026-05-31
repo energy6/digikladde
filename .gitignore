@@ -23,4 +23,4 @@ dist-ssr
 *.sln
 *.sw?
 
-docs/media/page@*.webm
+app/docs/media/page@*.webm

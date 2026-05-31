@@ -1,0 +1,60 @@
+{
+  "name": "digikladde",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "engines": {
+    "node": "24.x",
+    "npm": "11.x"
+  },
+  "scripts": {
+    "dev": "vite --host",
+    "build": "tsc -b && vite build",
+    "lint": "eslint . --max-warnings 0",
+    "preview": "vite preview --host",
+    "capture:guide-media": "node scripts/capture-guide-media.mjs",
+    "demo:pdf-export": "tsx scripts/pdf-export-demo.ts"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^6.2.5",
+    "@fortawesome/fontawesome-svg-core": "^7.2.0",
+    "@fortawesome/free-solid-svg-icons": "^7.2.0",
+    "@fortawesome/react-fontawesome": "^3.3.1",
+    "@yudiel/react-qr-scanner": "^2.6.0",
+    "antd": "^6.4.3",
+    "dexie": "^4.4.3",
+    "jspdf": "^4.2.1",
+    "qrcode.react": "^4.2.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "react-router-dom": "^7.16.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.12.4",
+    "@types/react": "^19.2.15",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.2",
+    "autoprefixer": "^10.5.0",
+    "eslint": "^10.4.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.6.0",
+    "playwright": "^1.60.0",
+    "postcss": "^8.5.15",
+    "tailwindcss": "^4.3.0",
+    "tsx": "^4.22.3",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.60.0",
+    "vite": "^8.0.14",
+    "vite-plugin-pwa": "^1.3.0"
+  },
+  "optionalDependencies": {
+    "@rolldown/binding-darwin-arm64": "1.0.2",
+    "@rolldown/binding-linux-x64-gnu": "1.0.2",
+    "@rollup/rollup-darwin-arm64": "4.60.3",
+    "@rollup/rollup-linux-x64-gnu": "4.60.3",
+    "lightningcss-darwin-arm64": "1.32.0",
+    "lightningcss-linux-x64-gnu": "1.32.0"
+  }
+}
