@@ -2,25 +2,53 @@
 
 import { execSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const rootDir = join(__dirname, '../../');
+
 const baseUrl = process.env.CAPTURE_BASE_URL ?? 'http://127.0.0.1:4173';
-const screenshotsDir = join(process.cwd(), 'docs', 'screenshots');
-const mediaDir = join(process.cwd(), 'docs', 'media');
+const screenshotsDir = join(rootDir, 'docs', 'screenshots');
+const mediaDir = join(rootDir, 'docs', 'media');
+const captureViewport = { width: 390, height: 720 };
+
+const ensureBaseUrlReachable = async (url) => {
+  const timeout = 5000;
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeout) {
+    try {
+      const response = await fetch(url, { method: 'GET' });
+      if (response.ok || response.status < 500) {
+        return;
+      }
+    } catch {
+      // Retry briefly until timeout to allow freshly started preview servers.
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+
+  throw new Error(
+    `Capture-Base-URL nicht erreichbar: ${url}. Starte vorher z.B. \"npm run -w app preview -- --host --port 4173\" `
+    + 'oder setze CAPTURE_BASE_URL auf eine laufende App-URL.'
+  );
+};
 
 mkdirSync(screenshotsDir, { recursive: true });
 mkdirSync(mediaDir, { recursive: true });
 
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({
-  viewport: { width: 390, height: 844 },
+  viewport: captureViewport,
   deviceScaleFactor: 3,
   isMobile: true,
   hasTouch: false,
   recordVideo: {
     dir: mediaDir,
-    size: { width: 390, height: 844 },
+    size: captureViewport,
   },
 });
 
@@ -402,8 +430,11 @@ const forceFinalizeLatestFlight = async (studentName) => {
 };
 
 let courseId;
+let captureSucceeded = false;
 
 try {
+  await ensureBaseUrlReachable(baseUrl);
+
   step('open course list and open create modal');
   await page.goto(`${baseUrl}/`);
   await installInteractionOverlay();
@@ -416,7 +447,8 @@ try {
     name: 'A-Schein April 2026',
     startDate: '2026-04-01',
     endDate: '2026-04-10',
-    courseType: 'Windenkurs',
+    courseType: 'Höhenkurs',
+    flightSchool: 'Flugschule Bergwind',
     students: [],
     totalFlights: 0,
   });
@@ -424,7 +456,8 @@ try {
     name: 'B-Schein März 2026',
     startDate: '2026-03-15',
     endDate: '2026-03-22',
-    courseType: 'Windenkurs',
+    courseType: 'Höhenkurs',
+    flightSchool: 'Flugschule Bergwind',
     students: [],
     totalFlights: 0,
   });
@@ -432,11 +465,19 @@ try {
   await waitUi();
   await pace(350);
 
+  step('set flight school filter');
+  const flightSchoolSelect = page.locator('.ant-select').first();
+  await tap(flightSchoolSelect);
+  const bergwindOption = page.locator('.ant-select-item-option').filter({ hasText: 'Flugschule Bergwind' }).first();
+  await tap(bergwindOption);
+  await pace(300);
+
   await tap(page.locator('button.ant-btn-primary').filter({ has: page.locator('svg[aria-label="circle-plus"], [data-icon="circle-plus"]') }).first());
   const createModal = page.locator('.ant-modal').filter({ hasText: 'Kurs erstellen' }).last();
   await createModal.waitFor({ state: 'visible' });
 
   step('fill course form');
+  await fillTextInputByLabel('Flugschule', 'Flugschule Bergwind');
   await fillTextInputByLabel('Name', 'A-Schein Mai 2026');
   await fillTextInputByLabel('Startdatum', '2026-05-01');
   await fillTextInputByLabel('Enddatum', '2026-05-05');
@@ -458,20 +499,28 @@ try {
 
   step('open edit modal via long-press on course header');
   await waitUi();
-  const headerTitle = page.locator('.ant-card').first().locator('[style*="cursor: pointer"]').first();
+  const headerTitle = page
+    .locator('[style*="cursor: pointer"]')
+    .filter({ hasText: 'A-Schein Mai 2026' })
+    .first();
+  await headerTitle.waitFor({ state: 'visible', timeout: 15000 });
   await headerTitle.dispatchEvent('mousedown');
   await page.waitForTimeout(600);
   await headerTitle.dispatchEvent('mouseup');
-  const editCourseModal = page.locator('.ant-modal').filter({ hasText: 'Kursinfos bearbeiten' }).last();
+  const editCourseModal = page
+    .locator('.ant-modal')
+    .filter({ hasText: /Kurs bearbeiten|Kursinfos bearbeiten/ })
+    .last();
   await editCourseModal.waitFor({ state: 'visible' });
-  await fillTextInputByLabel('Kursname', 'A-Schein Mai 2026 (Update)');
+  const hasKursname = await editCourseModal.getByText('Kursname', { exact: false }).first().isVisible().catch(() => false);
+  await fillTextInputByLabel(hasKursname ? 'Kursname' : 'Name', 'A-Schein Mai 2026 (Update)');
   await shot('03-kursdaten-bearbeiten.png');
   step('save edited course');
   await tap(editCourseModal.locator('.ant-modal-footer button.ant-btn-primary'));
   await editCourseModal.waitFor({ state: 'hidden' });
 
-  step('force Windenkurs and reload');
-  await setCourseType(courseId, 'Windenkurs');
+  step('force Höhenkurs and reload');
+  await setCourseType(courseId, 'Höhenkurs');
   await page.reload();
   await waitUi();
 
@@ -550,17 +599,35 @@ try {
   const maxIdleRow = page.locator('.ant-list-item').filter({ hasText: 'Max Muster' }).first();
   await tap(maxIdleRow.locator('button').nth(1));
   const startModal = page.locator('.ant-modal').filter({ hasText: 'Flug starten:' }).last();
+  await startModal.waitFor({ state: 'visible', timeout: 5000 });
 
-  const terrainItem = startModal.locator('.ant-form-item').filter({ hasText: 'Gelände' }).first();
-  const terrainInput = terrainItem.locator('input').first();
-  await tap(terrainInput);
-  await terrainInput.fill('Bergwiese');
-  await pace(300);
-  const teacherItem = startModal.locator('.ant-form-item').filter({ hasText: 'Lehrer' }).first();
-  const teacherInput = teacherItem.locator('input').first();
-  await tap(teacherInput);
-  await teacherInput.fill('Peter Pilot');
-  await pace(300);
+  await pace(500);
+  // Direkt Inputs finden durch Position im Modal
+  const inputs = startModal.locator('input[type="text"]');
+  const inputCount = await inputs.count();
+  if (inputCount >= 4) {
+    const input0 = inputs.nth(0);
+    await tap(input0);
+    await input0.fill('Wasserkuppe');
+    await pace(300);
+
+    const input1 = inputs.nth(1);
+    await tap(input1);
+    await input1.fill('Peter Pilot');
+    await pace(300);
+
+    const input2 = inputs.nth(2);
+    await tap(input2);
+    await input2.fill('Flugplatz Nord');
+    await pace(300);
+
+    const input3 = inputs.nth(3);
+    await tap(input3);
+    await input3.fill('Lisa Lande');
+    await pace(300);
+  } else {
+    throw new Error(`Erwartet 4 Text-Inputs im Start-Modal, gefunden: ${inputCount}`);
+  }
 
   const maneuverGroup = startModal.locator('.ant-form-item').filter({ hasText: 'Manöver' }).first();
   await setChecked(maneuverGroup.locator('input[type="checkbox"]').nth(0), true);
@@ -572,14 +639,22 @@ try {
   await startModal.waitFor({ state: 'hidden' });
   await waitUi();
 
-  step('save remarks during active flight');
+  step('capture active in-flight status (green)');
   const activeMaxRow = page.locator('.ant-list-item').filter({ hasText: 'Max Muster' }).first();
+  await activeMaxRow.waitFor({ state: 'visible', timeout: 15000 });
+  await shot('07-schueler-im-flug-gruen.png');
+
+  step('open remarks modal and adjust maneuvers during active flight');
   await tap(activeMaxRow, { double: true });
   const remarksModal = page.locator('.ant-modal').filter({ hasText: 'Bemerkung:' }).last();
+  await remarksModal.waitFor({ state: 'visible' });
+  const remarksManeuverGroup = remarksModal.locator('.ant-form-item').filter({ hasText: 'Manöver' }).first();
+  await setChecked(remarksManeuverGroup.locator('input[type="checkbox"]').nth(2), true);
   const remarksInput = remarksModal.locator('textarea');
   await tap(remarksInput);
   await remarksInput.fill('Sehr sauberer Start, beim nächsten Flug auf Armhaltung achten.');
   await pace(500);
+  await shot('08-bemerkung-manoever-im-flug.png');
   await tap(remarksModal.locator('.ant-modal-footer button.ant-btn-primary'));
   await remarksModal.waitFor({ state: 'hidden' });
 
@@ -593,7 +668,7 @@ try {
   step('mark landing pending');
   await tap(activeMaxRow.locator('button').nth(1));
   await waitUi();
-  await shot('07-landung-cooldown.png');
+  await shot('09-landung-cooldown.png');
 
   step('resume flight');
   try {
@@ -632,32 +707,80 @@ try {
   await idleMaxRow.locator('button').filter({ has: page.locator('[data-icon="edit"]') }).first().waitFor({ state: 'visible', timeout: 15000 });
   const remarksIndicator = idleMaxRow.locator('svg[data-icon="circle-exclamation"]');
   await remarksIndicator.waitFor({ state: 'visible', timeout: 15000 });
-  await shot('08-bemerkung-vorhanden.png');
+  await shot('10-bemerkung-vorhanden.png');
 
   step('open last-flight remarks');
   await tap(idleMaxRow, { double: true });
   const remarksReadOnly = page.locator('.ant-modal').filter({ hasText: 'Letzter Flug:' }).last();
   await pace(350);
-  await shot('09-bemerkung-ansehen.png');
+  await shot('11-bemerkung-ansehen.png');
   await page.keyboard.press('Escape');
   await remarksReadOnly.waitFor({ state: 'hidden' });
+
+  step('share course via qr-code');
+  const shareBtn = page.locator('button').filter({ has: page.locator('[data-icon="link"], .anticon-link') }).first();
+  await tap(shareBtn);
+  const shareQrModal = page.locator('.ant-modal').filter({ hasText: 'Share-QR-Code' }).last();
+  const qrModalVisible = await shareQrModal.waitFor({ state: 'visible', timeout: 8000 }).then(() => true).catch(() => false);
+  if (qrModalVisible) {
+    await pace(350);
+    await shot('12-kurs-qr-freigeben.png');
+    await page.keyboard.press('Escape');
+    await shareQrModal.waitFor({ state: 'hidden' });
+  } else {
+    console.log('Skipping QR share screenshot: share modal did not open (relay unavailable?)');
+  }
+
+  step('open qr-code import dialog');
+  await page.goto(`${baseUrl}/`);
+  await waitUi();
+  await closeOfflineBannerIfVisible();
+  await tap(page.locator('button.ant-btn-primary').filter({ has: page.locator('svg[aria-label="circle-plus"], [data-icon="circle-plus"]') }).first());
+  await createModal.waitFor({ state: 'visible' });
+  const scanCourseBtn = createModal.getByRole('button', { name: 'Kurs scannen' });
+  await tap(scanCourseBtn);
+  const scanModal = page.locator('.ant-modal').filter({ hasText: 'Kurs scannen' }).last();
+  await scanModal.waitFor({ state: 'visible' });
+  await pace(350);
+  await shot('13-kurs-qr-import.png');
+  await page.keyboard.press('Escape');
+  await scanModal.waitFor({ state: 'hidden' });
+  await page.keyboard.press('Escape');
+  await createModal.waitFor({ state: 'hidden' });
+
+  step('open online-mode settings');
+  const settingsBtn = page.getByRole('button', { name: 'Einstellungen öffnen' });
+  await tap(settingsBtn);
+  const settingsModal = page.locator('.ant-modal').filter({ hasText: 'Einstellungen' }).last();
+  await settingsModal.waitFor({ state: 'visible' });
+  const usernameInput = settingsModal.locator('input').nth(0);
+  await tap(usernameInput);
+  await usernameInput.fill('Pilot Capture');
+  const relayUrlInput = settingsModal.locator('input').nth(1);
+  await tap(relayUrlInput);
+  await relayUrlInput.fill('https://digikladde.aircursion.de');
+  await pace(350);
+  await shot('14-einstellungen-online-mode.png');
+  await tap(settingsModal.locator('.ant-modal-footer button.ant-btn-primary'));
+  await settingsModal.waitFor({ state: 'hidden' });
 
   step('open evaluation and trigger pdf');
   await page.goto(`${baseUrl}/course/${courseId}/evaluation`);
   await waitUi();
   await pace(350);
-  await shot('10-kursbericht-pdf.png');
+  await shot('15-kursbericht-pdf.png');
 
   const evalCard = page.locator('.ant-card').filter({ hasText: 'Kursauswertung' }).first();
   await tap(evalCard.locator('.ant-card-extra button.ant-btn-primary'));
 
+  captureSucceeded = true;
   console.log('Screenshots erstellt in docs/screenshots');
 } finally {
   const video = page.video();
   await context.close();
   await browser.close();
 
-  if (video) {
+  if (video && captureSucceeded) {
     const videoPath = await video.path();
     console.log(`Video erstellt: ${videoPath}`);
 
@@ -666,12 +789,14 @@ try {
     try {
       console.log('Konvertiere Video zu GIF...');
       execSync(
-        `ffmpeg -i "${videoPath}" -vf "fps=10,scale=390:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" "${gifPath}"`,
+        `ffmpeg -y -i "${videoPath}" -vf "fps=10,scale=390:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" "${gifPath}"`,
         { stdio: 'inherit' }
       );
       console.log(`GIF erstellt: ${gifPath}`);
     } catch (error) {
       console.error(`Fehler bei GIF-Konvertierung: ${error.message}`);
     }
+  } else if (!captureSucceeded) {
+    console.log('Capture abgebrochen: GIF-Konvertierung übersprungen.');
   }
 }

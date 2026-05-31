@@ -16,7 +16,8 @@
     "lint:app": "npm run -w app lint",
     "lint:relay": "npm run -w relay lint",
     "build:app": "npm run -w app build",
-    "typecheck:relay": "npm run -w relay typecheck"
+    "typecheck:relay": "npm run -w relay typecheck",
+    "capture:guide-media": "node app/scripts/run-capture-with-preview.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
