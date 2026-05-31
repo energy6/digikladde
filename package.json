@@ -11,6 +11,7 @@
     "relay"
   ],
   "scripts": {
+    "dev:app": "npm run -w app dev",
     "lint": "npm run lint:app && npm run lint:relay",
     "lint:app": "npm run -w app lint",
     "lint:relay": "npm run -w relay lint",
