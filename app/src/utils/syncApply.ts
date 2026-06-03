@@ -230,11 +230,15 @@ const applyFlightUpsert = async (envelope: RelaySyncEnvelope): Promise<void> => 
 };
 
 const applyFlightDelete = async (envelope: RelaySyncEnvelope): Promise<void> => {
-  const syncId = String((envelope.payload as { syncId?: string })?.syncId ?? '');
+  const payload = (envelope.payload ?? {}) as FlightPayload;
+  const syncId = payload.syncId;
   if (!syncId) return;
 
   const existing = await db.flights.where('syncId').equals(syncId).first();
   if (!existing?.id) return;
+
+  // Only apply deletion if incoming is newer (prevents race conditions)
+  if (!isIncomingNewer(payload.updatedAt, existing.updatedAt)) return;
 
   await db.flights.delete(existing.id);
 };
