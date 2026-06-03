@@ -850,7 +850,6 @@ const CourseDetail = () => {
           studentId: flight.studentId,
           updatedAt: now,
           updatedByDeviceId: deviceId,
-          deletedAt: now,
         },
       });
     }
