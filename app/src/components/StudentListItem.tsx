@@ -14,7 +14,7 @@ const StudentListItem = ({student, flight, nowTs}: StudentListItemProps) => {
 
   return (
     <List.Item.Meta
-      title={<span style={{ color: '#fff', fontWeight: 600 }}>{student.name}</span>}
+      title={<span style={{ color: '#fff', fontWeight: 600 }}>{student.name} ({student.totalFlights ?? 0})</span>}
       description={<>
         <div style={{ color: '#deeeff' }}>
           <div>{student.glider} — {student.color}</div>
