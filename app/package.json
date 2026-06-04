@@ -25,14 +25,14 @@
     "dexie": "^4.4.3",
     "jspdf": "^4.2.1",
     "qrcode.react": "^4.2.0",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "react-router-dom": "^7.16.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.12.4",
-    "@types/react": "^19.2.15",
+    "@types/react": "^19.2.16",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.2",
     "autoprefixer": "^10.5.0",
@@ -45,15 +45,15 @@
     "tailwindcss": "^4.3.0",
     "tsx": "^4.22.4",
     "typescript": "~6.0.3",
-    "typescript-eslint": "^8.60.0",
-    "vite": "^8.0.14",
+    "typescript-eslint": "^8.60.1",
+    "vite": "^8.0.16",
     "vite-plugin-pwa": "^1.3.0"
   },
   "optionalDependencies": {
-    "@rolldown/binding-darwin-arm64": "1.0.3",
-    "@rolldown/binding-linux-x64-gnu": "1.0.3",
-    "@rollup/rollup-darwin-arm64": "4.60.4",
-    "@rollup/rollup-linux-x64-gnu": "4.60.4",
+    "@rolldown/binding-darwin-arm64": "1.1.0",
+    "@rolldown/binding-linux-x64-gnu": "1.1.0",
+    "@rollup/rollup-darwin-arm64": "4.61.0",
+    "@rollup/rollup-linux-x64-gnu": "4.61.0",
     "lightningcss-darwin-arm64": "1.32.0",
     "lightningcss-linux-x64-gnu": "1.32.0"
   }
