@@ -1,5 +1,5 @@
 import { PlusOutlined } from '@ant-design/icons';
-import { faTrashCan } from '@fortawesome/free-solid-svg-icons';
+import { faTrashCan, faSortDown, faSortUp } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { Button, Card, List, Modal, Popconfirm, Space, Typography } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -119,6 +119,7 @@ const CourseDetail = () => {
   const [remarksReadOnly, setRemarksReadOnly] = useState(false);
   const [remarksContextText, setRemarksContextText] = useState('');
   const speechRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
   const isPendingLanding = (flight: Flight) => Boolean(flight.landingPendingUntil && !flight.landingFinalizedAt);
 
@@ -340,8 +341,12 @@ const CourseDetail = () => {
   const activeFlights = useMemo(
     () => flights
       .filter((flight) => !flight.endTime && !isPendingLanding(flight))
-      .sort((a, b) => b.startTime.localeCompare(a.startTime)),
-    [flights],
+      .sort((a, b) => {
+        const aStart = Date.parse(a.startTime);
+        const bStart = Date.parse(b.startTime);
+        return sortOrder === 'asc' ? aStart - bStart : bStart - aStart;
+      }),
+    [flights, sortOrder],
   );
 
   const pendingFlights = useMemo(
@@ -350,7 +355,7 @@ const CourseDetail = () => {
       .sort((a, b) => {
         const aPending = Date.parse(a.landingPendingUntil ?? a.startTime);
         const bPending = Date.parse(b.landingPendingUntil ?? b.startTime);
-        return aPending - bPending;
+        return bPending - aPending;
       }),
     [flights],
   );
@@ -363,7 +368,7 @@ const CourseDetail = () => {
         return student ? { kind: 'active', flight, student } : null;
       })
       .filter((entry): entry is ActiveEntry => entry !== null);
-  }, [activeFlights, course]);
+  }, [activeFlights, course, sortOrder]);
 
   const pendingEntries = useMemo<PendingEntry[]>(() => {
     if (!course) return [];
@@ -373,7 +378,7 @@ const CourseDetail = () => {
         return student ? { kind: 'pending', flight, student } : null;
       })
       .filter((entry): entry is PendingEntry => entry !== null);
-  }, [pendingFlights, course]);
+  }, [pendingFlights, course, sortOrder]);
 
   const notFlyingStudents = useMemo(() => {
     if (!course) return [];
@@ -1106,6 +1111,13 @@ const CourseDetail = () => {
           title={`Schüler (${course.students.length})`}
           extra={(
             <Space orientation="horizontal" size="small" align="center">
+              <Button
+                key="add"
+                type={deleteMode ? 'primary' : 'default'}
+                icon={<FontAwesomeIcon icon={ sortOrder === 'asc' ? faSortDown : faSortUp} />}
+                onClick={() => setSortOrder((current) => (current === 'asc' ? 'desc' : 'asc'))}
+                disabled={deleteMode}
+              />
               {deleteMode && selectedStudentIds.length > 0 ? (
                 <Popconfirm
                   title="Markierte Schüler entfernen?"
