@@ -368,7 +368,7 @@ const CourseDetail = () => {
         return student ? { kind: 'active', flight, student } : null;
       })
       .filter((entry): entry is ActiveEntry => entry !== null);
-  }, [activeFlights, course, sortOrder]);
+  }, [activeFlights, course]);
 
   const pendingEntries = useMemo<PendingEntry[]>(() => {
     if (!course) return [];
@@ -378,7 +378,7 @@ const CourseDetail = () => {
         return student ? { kind: 'pending', flight, student } : null;
       })
       .filter((entry): entry is PendingEntry => entry !== null);
-  }, [pendingFlights, course, sortOrder]);
+  }, [pendingFlights, course]);
 
   const notFlyingStudents = useMemo(() => {
     if (!course) return [];
