@@ -1,6 +1,6 @@
 import { faBan, faPlaneArrival } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { Button, List, Popconfirm } from 'antd';
+import { Button, List, Popconfirm, Space } from 'antd';
 import type { Flight, Student } from '../../models/types';
 import StudentListItem from '../StudentListItem';
 
@@ -34,28 +34,32 @@ const ActiveStudentListItem = ({
         marginBottom: 6,
       }}
       actions={[
-        <Popconfirm
-          title="Flug abbrechen?"
-          okText="Ja"
-          cancelText="Nein"
-          onConfirm={() => {
-            if (flightId) {
-              onAbortFlight(flightId);
-            }
-          }}
-        >
-          <Button danger icon={<FontAwesomeIcon icon={faBan} />} disabled={!flightId} />
-        </Popconfirm>,
-        <Button
-          type="primary"
-          onClick={() => {
-            if (flightId) {
-              onLandFlight(flightId);
-            }
-          }}
-          icon={<FontAwesomeIcon icon={faPlaneArrival} />}
-          disabled={!flightId}
-        />,
+        <Space orientation="horizontal" size="small" align="center">
+          <Popconfirm
+            title="Flug abbrechen?"
+            okText="Ja"
+            cancelText="Nein"
+            onConfirm={() => {
+              if (flightId) {
+                onAbortFlight(flightId);
+              }
+            }}
+          >
+            <Button danger icon={<FontAwesomeIcon icon={faBan} />} disabled={!flightId} />
+          </Popconfirm>
+          <Button
+            type="primary"
+            danger
+            onClick={() => {
+              if (flightId) {
+                onLandFlight(flightId);
+              }
+            }}
+            icon={<FontAwesomeIcon icon={faPlaneArrival} style={{ width: '2em', height: '2em' }} />}
+            disabled={!flightId}
+            style={{ width: '4em', height: '4em' }}
+          />
+        </Space>,
       ]}
     >
       <StudentListItem student={student} flight={flight} nowTs={nowTs} />
