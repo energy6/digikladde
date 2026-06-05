@@ -1,6 +1,6 @@
 import { faBackwardStep, faForwardStep } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { Button, List } from 'antd';
+import { Button, List, Space } from 'antd';
 import type { Flight, Student } from '../../models/types';
 import StudentListItem from '../StudentListItem';
 
@@ -34,24 +34,26 @@ const PendingStudentListItem = ({
         marginBottom: 6,
       }}
       actions={[
-        <Button
-          onClick={() => {
-            if (flightId) {
-              onResumeFlight(flightId);
-            }
-          }}
-          icon={<FontAwesomeIcon icon={faBackwardStep} />}
-          disabled={!flightId}
-        />,
-        <Button
-          onClick={() => {
-            if (flightId) {
-              onTerminateFlight(flightId);
-            }
-          }}
-          icon={<FontAwesomeIcon icon={faForwardStep} />}
-          disabled={!flightId}
-        />,
+        <Space orientation="horizontal" size="small" align="center">
+          <Button
+            onClick={() => {
+              if (flightId) {
+                onResumeFlight(flightId);
+              }
+            }}
+            icon={<FontAwesomeIcon icon={faBackwardStep} />}
+            disabled={!flightId}
+          />
+          <Button
+            onClick={() => {
+              if (flightId) {
+                onTerminateFlight(flightId);
+              }
+            }}
+            icon={<FontAwesomeIcon icon={faForwardStep} />}
+            disabled={!flightId}
+          />
+        </Space>,
       ]}
     >
       <StudentListItem student={student} flight={flight} nowTs={nowTs} />
