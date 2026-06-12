@@ -15,7 +15,10 @@
     "lint": "npm run lint:app && npm run lint:relay",
     "lint:app": "npm run -w app lint",
     "lint:relay": "npm run -w relay lint",
+    "build": "npm run build:app && npm run build:relay",
     "build:app": "npm run -w app build",
+    "build:relay": "npm run -w relay build",
+    "preview": "node scripts/preview.mjs",
     "typecheck:relay": "npm run -w relay typecheck",
     "capture:guide-media": "node app/scripts/run-capture-with-preview.mjs"
   },

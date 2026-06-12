@@ -98,6 +98,14 @@ docker pull ghcr.io/<github-org-or-user>/digikladde-relay:latest
 - `RELAY_IDLE_TIMEOUT_MS` (default `120000`)
 - `RELAY_TICKET_TTL_MS` (default `900000`)
 - `RELAY_MESSAGE_BUFFER_LIMIT_PER_ROOM` (default `100`)
+- `RELAY_QUEUE_RETENTION_MS` (default `86400000`)
+- `RELAY_WEB_PUSH_PUBLIC_KEY` (optional; enables Web Push only when all Web Push vars are set)
+- `RELAY_WEB_PUSH_PRIVATE_KEY` (optional)
+- `RELAY_WEB_PUSH_SUBJECT` (optional; for example `mailto:admin@example.com`)
+
+The catch-up queue and Web Push subscriptions are in-memory. They help devices recover from mobile standby gaps, but they do not survive relay restarts. Web Push is a notification nudge only; clients still reconnect to the relay and request queued deltas before applying updates.
+
+Web Push requires HTTPS, notification permission, and a service worker. On iOS/iPadOS it is available for installed Home Screen web apps, not ordinary Safari tabs.
 
 ## Nginx routing note
 

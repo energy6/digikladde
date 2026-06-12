@@ -14,6 +14,7 @@ import { createId, createJoinSecret } from '../utils/idGenerator';
 import { applyRemoteDeltaEnvelope } from '../utils/syncApply';
 import { ingestRemoteDeltaEvent, listCourseDeltaEvents, listRoomDeltaEvents, logLocalDeltaEvent } from '../utils/syncEvents';
 import { exportCourseSnapshot, importCourseSnapshot } from '../utils/syncSnapshot';
+import { getExistingPushSubscription, registerPushNotifications, type PushRegistrationResult } from '../utils/pushNotifications';
 import { isCourseSyncSnapshot, isRelaySyncEnvelope } from '../utils/typeGuards';
 
 type StartShareSessionInput = {
@@ -62,6 +63,7 @@ type RelaySyncContextValue = {
   connectCourseSession: (courseId: number) => Promise<void>;
   disconnectCourseSession: (courseId: number) => Promise<void>;
   sendPendingDeltas: (courseId: number) => Promise<number>;
+  enablePushNotifications: (courseId: number) => Promise<PushRegistrationResult>;
   subscribeSnapshotImports: (courseId: number, listener: (importedCourseId: number) => void) => () => void;
   subscribeCourseChanges: (courseId: number, listener: () => void) => () => void;
   waitForInitialSnapshot: (courseId: number, timeoutMs?: number) => Promise<number | null>;
@@ -84,6 +86,14 @@ type RelayMessage = {
   seq?: number;
   targetDeviceId?: string;
   payload?: Record<string, unknown>;
+};
+
+type QueuedRelayMessage = {
+  seq: number;
+  ts: number;
+  fromDeviceId: string;
+  type: 'sync_response';
+  payload: Record<string, unknown>;
 };
 
 const MAX_RECONNECT_ATTEMPTS = 5;
@@ -307,6 +317,17 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl }: RelaySyn
     });
   }, []);
 
+  const updateRelayQueueCursor = useCallback(async (courseSyncId: string, lastRelayQueueSeq: number): Promise<void> => {
+    const existing = await db.shareSessions.where('courseSyncId').equals(courseSyncId).first();
+    if (!existing?.id) return;
+
+    await db.shareSessions.update(existing.id, {
+      lastRelayQueueSeq,
+      lastSyncedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+  }, []);
+
   const leaveShareSession = useCallback(async (courseSyncId: string): Promise<void> => {
     const existing = await db.shareSessions.where('courseSyncId').equals(courseSyncId).first();
     if (!existing?.id) return;
@@ -425,6 +446,47 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl }: RelaySyn
     return sendDeltaEventsOverConnection(connection);
   }, [sendDeltaEventsOverConnection]);
 
+  const waitForConnectionTicket = useCallback(async (courseSyncId: string, timeoutMs = 5000): Promise<ConnectionState | null> => {
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < timeoutMs) {
+      const connection = connectionsRef.current.get(courseSyncId);
+      if (connection?.ticket && connection.ws.readyState === WebSocket.OPEN) {
+        return connection;
+      }
+
+      await new Promise((resolve) => window.setTimeout(resolve, 100));
+    }
+
+    return null;
+  }, []);
+
+  const sendPushSubscriptionOverConnection = useCallback(async (connection: ConnectionState, subscription: PushSubscription): Promise<void> => {
+    if (connection.ws.readyState !== WebSocket.OPEN || !connection.ticket) return;
+
+    const message: RelayMessage = {
+      version: 1,
+      type: 'push_subscribe',
+      roomId: connection.roomId,
+      deviceId,
+      ticket: connection.ticket,
+      seq: connection.seq++,
+      payload: {
+        subscription: subscription.toJSON(),
+      },
+    };
+
+    connection.ws.send(JSON.stringify(message));
+
+    const existing = await db.shareSessions.where('courseSyncId').equals(connection.courseSyncId).first();
+    if (existing?.id) {
+      await db.shareSessions.update(existing.id, {
+        pushSubscribedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  }, [deviceId]);
+
   const disconnectCourseSession = useCallback(async (courseId: number): Promise<void> => {
     const { courseSyncId } = await ensureCourseSyncId(courseId);
     let connection = connectionsRef.current.get(courseSyncId);
@@ -534,6 +596,18 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl }: RelaySyn
       connection.ticket = incoming.ticket;
       void updateShareSessionState(courseSyncId, 'connected');
 
+      const catchupRequest: RelayMessage = {
+        version: 1,
+        type: 'catchup_request',
+        roomId: session.roomId,
+        deviceId,
+        ticket: connection.ticket,
+        seq: connection.seq++,
+        payload: {
+          afterSeq: session.lastRelayQueueSeq ?? 0,
+        },
+      };
+
       const syncRequest: RelayMessage = {
         version: 1,
         type: 'sync_request',
@@ -547,8 +621,15 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl }: RelaySyn
         },
       };
 
+      ws.send(JSON.stringify(catchupRequest));
       ws.send(JSON.stringify(syncRequest));
       void sendDeltaEventsOverConnection(connection);
+
+      void getExistingPushSubscription().then((subscription) => {
+        if (subscription) {
+          void sendPushSubscriptionOverConnection(connection, subscription);
+        }
+      });
     };
 
     const handleSyncRequest = (incoming: RelayMessage) => {
@@ -622,6 +703,62 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl }: RelaySyn
       });
     };
 
+    const handleCatchupResponse = (incoming: RelayMessage) => {
+      const messages = incoming.payload?.messages;
+      if (!Array.isArray(messages) || !connection.ticket) return;
+
+      const queuedMessages = messages.filter((message): message is QueuedRelayMessage => (
+        typeof message === 'object'
+        && message !== null
+        && typeof (message as QueuedRelayMessage).seq === 'number'
+        && (message as QueuedRelayMessage).type === 'sync_response'
+        && typeof (message as QueuedRelayMessage).payload === 'object'
+        && (message as QueuedRelayMessage).payload !== null
+      ));
+
+      if (queuedMessages.length === 0) return;
+
+      enqueue(async () => {
+        let highestAppliedSeq = session.lastRelayQueueSeq ?? 0;
+
+        for (const queuedMessage of queuedMessages) {
+          const envelope = queuedMessage.payload.envelope;
+          if (!isRelaySyncEnvelope(envelope)) {
+            highestAppliedSeq = Math.max(highestAppliedSeq, queuedMessage.seq);
+            continue;
+          }
+
+          const result = await ingestRemoteDeltaEvent(envelope);
+          if (result.accepted) {
+            await applyRemoteDeltaEnvelope(envelope);
+
+            const localCourse = await db.courses.where('syncId').equals(envelope.courseSyncId).first();
+            if (localCourse?.id) {
+              emitCourseChange(localCourse.id);
+            }
+          }
+
+          highestAppliedSeq = Math.max(highestAppliedSeq, queuedMessage.seq);
+        }
+
+        const ackMessage: RelayMessage = {
+          version: 1,
+          type: 'catchup_ack',
+          roomId: connection.roomId,
+          deviceId,
+          ticket: connection.ticket,
+          seq: connection.seq++,
+          payload: {
+            throughSeq: highestAppliedSeq,
+          },
+        };
+
+        ws.send(JSON.stringify(ackMessage));
+        await updateRelayQueueCursor(connection.courseSyncId, highestAppliedSeq);
+        await touchShareSession(connection.courseSyncId);
+      });
+    };
+
     const handleWsMessage = (event: MessageEvent) => {
       let incoming: RelayMessage;
 
@@ -638,6 +775,7 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl }: RelaySyn
 
       if (incoming.type === 'join_ok') { handleJoinOk(incoming); return; }
       if (incoming.type === 'join_denied' || incoming.type === 'error') { void updateShareSessionState(courseSyncId, 'error'); return; }
+      if (incoming.type === 'catchup_response') { handleCatchupResponse(incoming); return; }
       if (incoming.type === 'sync_request') { handleSyncRequest(incoming); return; }
 
       if (incoming.type === 'sync_response') {
@@ -677,8 +815,26 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl }: RelaySyn
     normalizedRelayBaseUrl,
     sendDeltaEventsOverConnection,
     touchShareSession,
+    updateRelayQueueCursor,
     updateShareSessionState,
+    sendPushSubscriptionOverConnection,
   ]);
+
+  const enablePushNotifications = useCallback(async (courseId: number): Promise<PushRegistrationResult> => {
+    const { courseSyncId } = await ensureCourseSyncId(courseId);
+    const session = await db.shareSessions.where('courseSyncId').equals(courseSyncId).first();
+    if (!session) return { status: 'unavailable' };
+
+    const result = await registerPushNotifications(session.relayBaseUrl || normalizedRelayBaseUrl);
+    if (result.status !== 'subscribed') return result;
+
+    await connectCourseSession(courseId);
+    const connection = await waitForConnectionTicket(courseSyncId);
+    if (!connection) return { status: 'unavailable' };
+
+    await sendPushSubscriptionOverConnection(connection, result.subscription);
+    return result;
+  }, [connectCourseSession, normalizedRelayBaseUrl, sendPushSubscriptionOverConnection, waitForConnectionTicket]);
 
   useEffect(() => {
     reconnectCourseSessionRef.current = (courseIdValue: number) => {
@@ -754,6 +910,7 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl }: RelaySyn
     connectCourseSession,
     disconnectCourseSession,
     sendPendingDeltas,
+    enablePushNotifications,
     subscribeSnapshotImports,
     subscribeCourseChanges,
     waitForInitialSnapshot,
@@ -761,6 +918,7 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl }: RelaySyn
     connectCourseSession,
     deviceId,
     disconnectCourseSession,
+    enablePushNotifications,
     exportSnapshot,
     getShareSession,
     ingestRemoteDelta,

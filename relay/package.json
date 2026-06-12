@@ -13,9 +13,12 @@
     "lint": "eslint src --max-warnings 0",
     "start": "node dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test src/*.test.ts",
     "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
+    "@types/web-push": "^3.6.4",
+    "web-push": "^3.6.7",
     "ws": "^8.21.0"
   },
   "devDependencies": {

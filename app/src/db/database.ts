@@ -92,6 +92,14 @@ export class DigiKladdeDB extends Dexie {
           flight.updatedByDeviceId = flight.updatedByDeviceId ?? 'local-device';
         });
       });
+
+    this.version(5).stores({
+      courses: '++id, syncId, name, startDate, endDate, flightSchool, updatedAt',
+      students: '++id, syncId, name, glider, color, flightSchool, updatedAt',
+      flights: '++id, syncId, courseId, studentId, startTime, endTime, landingPendingUntil, landingFinalizedAt, updatedAt',
+      syncEvents: '++id, &opId, roomId, courseSyncId, entityType, entitySyncId, opTs, operation, deviceId',
+      shareSessions: '++id, courseSyncId, roomId, state, updatedAt, [roomId+courseSyncId]',
+    });
   }
 }
 

@@ -25,4 +25,8 @@ export const relayConfig: RelayConfig = {
   idleTimeoutMs: parseNumber('RELAY_IDLE_TIMEOUT_MS', 120000),
   ticketTtlMs: parseNumber('RELAY_TICKET_TTL_MS', 15 * 60 * 1000),
   messageBufferLimitPerRoom: parseNumber('RELAY_MESSAGE_BUFFER_LIMIT_PER_ROOM', 100),
+  queueRetentionMs: parseNumber('RELAY_QUEUE_RETENTION_MS', 24 * 60 * 60 * 1000),
+  webPushPublicKey: process.env.RELAY_WEB_PUSH_PUBLIC_KEY?.trim() || undefined,
+  webPushPrivateKey: process.env.RELAY_WEB_PUSH_PRIVATE_KEY?.trim() || undefined,
+  webPushSubject: process.env.RELAY_WEB_PUSH_SUBJECT?.trim() || undefined,
 };
