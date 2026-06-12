@@ -9,9 +9,9 @@
   },
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json --noEmit && node scripts/build.mjs",
     "lint": "eslint src --max-warnings 0",
-    "start": "node dist/server.js",
+    "start": "node dist/server.cjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test src/*.test.ts",
     "smoke": "node scripts/smoke.mjs"
@@ -24,7 +24,13 @@
   "devDependencies": {
     "@types/node": "^24.13.1",
     "@types/ws": "^8.18.1",
+    "esbuild": "^0.28.0",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3"
+  },
+  "optionalDependencies": {
+    "@esbuild/darwin-arm64": "^0.28.0",
+    "@esbuild/linux-arm64": "^0.28.0",
+    "@esbuild/linux-x64": "^0.28.0"
   }
 }

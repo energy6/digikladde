@@ -54,8 +54,8 @@ npm run lint:relay
 Build image:
 
 ```bash
-cd relay
-docker build -t digikladde-relay:local .
+npm run build:relay
+docker build -t digikladde-relay:local ./relay
 ```
 
 Run container:
