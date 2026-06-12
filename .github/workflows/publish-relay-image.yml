@@ -47,6 +47,9 @@ jobs:
       - name: Typecheck relay
         run: npm run typecheck:relay
 
+      - name: Build relay bundle
+        run: npm run build:relay
+
       - name: Compute image owner
         id: vars
         run: echo "owner_lc=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"

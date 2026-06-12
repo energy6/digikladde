@@ -108,6 +108,8 @@ export interface ShareSession {
   username: string;
   state: ShareSessionState;
   lastSyncedAt?: string;
+  lastRelayQueueSeq?: number;
+  pushSubscribedAt?: string;
   updatedAt: string;
 }
 

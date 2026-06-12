@@ -1,5 +1,5 @@
-import { LinkOutlined, ReloadOutlined } from '@ant-design/icons';
-import { Button, Card, Modal, Space, Tag, Tooltip, message } from 'antd';
+import { BellOutlined, LinkOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Button, Card, Input, Modal, Space, Tag, Tooltip, message } from 'antd';
 import { QRCodeSVG } from 'qrcode.react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRelaySync } from '../context/RelaySyncContext';
@@ -15,6 +15,10 @@ const formatLastSync = (isoTimestamp?: string): string => {
   return `Letzte Sync: ${parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
 };
 
+const canUseWebShare = (): boolean => (
+  typeof navigator !== 'undefined' && typeof navigator.share === 'function'
+);
+
 
 
 type Props = {
@@ -28,11 +32,13 @@ const CourseSyncFooter = ({ course }: Props) => {
     connectCourseSession,
     disconnectCourseSession,
     sendPendingDeltas,
+    enablePushNotifications,
   } = useRelaySync();
 
   const [shareSession, setShareSession] = useState<ShareSession | null>(null);
-  const [busyAction, setBusyAction] = useState<'share' | 'resync' | null>(null);
+  const [busyAction, setBusyAction] = useState<'share' | 'resync' | 'push' | null>(null);
   const [qrShareModalOpen, setQrShareModalOpen] = useState(false);
+  const [webShareAvailable, setWebShareAvailable] = useState(false);
   const isSharedCourse = useMemo(() => Boolean(shareSession?.courseSyncId), [shareSession?.courseSyncId]);
 
   const refreshShareSession = useCallback(async (courseSyncId?: string) => {
@@ -49,6 +55,10 @@ const CourseSyncFooter = ({ course }: Props) => {
   useEffect(() => {
     void refreshShareSession();
   }, [refreshShareSession]);
+
+  useEffect(() => {
+    setWebShareAvailable(canUseWebShare());
+  }, []);
 
   useEffect(() => {
     if (!isSharedCourse) return;
@@ -101,6 +111,37 @@ const CourseSyncFooter = ({ course }: Props) => {
     }
   };
 
+  const handleEnablePush = async () => {
+    if (!course.id) return;
+
+    try {
+      setBusyAction('push');
+      const result = await enablePushNotifications(course.id);
+
+      if (result.status === 'subscribed') {
+        await refreshShareSession();
+        message.success('Benachrichtigungen für diesen Kurs sind aktiv.');
+        return;
+      }
+
+      if (result.status === 'denied') {
+        message.error('Benachrichtigungen wurden vom Browser blockiert.');
+        return;
+      }
+
+      if (result.status === 'unsupported') {
+        message.error('Dieses Gerät unterstützt keine Web-Push-Benachrichtigungen.');
+        return;
+      }
+
+      message.error('Benachrichtigungen sind am Relay nicht konfiguriert.');
+    } catch {
+      message.error('Benachrichtigungen konnten nicht aktiviert werden.');
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
   const shareQrPayload = shareSession
     ? JSON.stringify({
         type: 'digikladde_join',
@@ -127,25 +168,25 @@ const CourseSyncFooter = ({ course }: Props) => {
     }
 
     try {
-      if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-        await navigator.share({
-          title: 'DigiKladde Kurs teilen',
-          url: shareLink,
-        });
+      if (!canUseWebShare()) {
+        setWebShareAvailable(false);
         return;
       }
 
-      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(shareLink);
-        message.success('Share-Link wurde kopiert.');
-        return;
-      }
-
-      message.info('Teilen ist auf diesem Gerät nicht verfügbar.');
+      await navigator.share({
+        title: 'DigiKladde Kurs teilen',
+        url: shareLink,
+      });
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        return;
+      if (error instanceof DOMException) {
+        if (error.name === 'AbortError') {
+          return;
+        }
+        if (error.name === 'NotSupportedError') {
+          setWebShareAvailable(false);
+        }
       }
+
       message.error('Share-Link konnte nicht geteilt werden.');
     }
   }, [shareLink]);
@@ -180,14 +221,23 @@ const CourseSyncFooter = ({ course }: Props) => {
 
           <Space size={6}>
             {isSharedCourse && (
-              <Tooltip title="Ausstehende Updates senden und neuen Snapshot anfordern">
-                <Button
-                  icon={<ReloadOutlined />}
-                  type="primary"
-                  onClick={() => void handleResync()}
-                  loading={busyAction === 'resync'}
-                />
-              </Tooltip>
+              <>
+                <Tooltip title="Benachrichtigung bei wartenden Updates aktivieren">
+                  <Button
+                    icon={<BellOutlined />}
+                    onClick={() => void handleEnablePush()}
+                    loading={busyAction === 'push'}
+                  />
+                </Tooltip>
+                <Tooltip title="Ausstehende Updates senden und neuen Snapshot anfordern">
+                  <Button
+                    icon={<ReloadOutlined />}
+                    type="primary"
+                    onClick={() => void handleResync()}
+                    loading={busyAction === 'resync'}
+                  />
+                </Tooltip>
+              </>
             )}
             <Tooltip title="Kurs teilen und QR-Code anzeigen">
               <Button
@@ -210,9 +260,18 @@ const CourseSyncFooter = ({ course }: Props) => {
         {shareSession ? (
           <Space orientation="vertical" size="middle" style={{ width: '100%', alignItems: 'center' }}>
             <QRCodeSVG value={shareQrPayload} size={260} marginSize={4} />
-            <Button icon={<LinkOutlined />} onClick={() => void handleShareByLink()}>
-              Per Link teilen
-            </Button>
+            {webShareAvailable ? (
+              <Button icon={<LinkOutlined />} onClick={() => void handleShareByLink()}>
+                Per Link teilen
+              </Button>
+            ) : (
+              <Input
+                readOnly
+                value={shareLink}
+                onFocus={(event) => event.target.select()}
+                style={{ width: '100%' }}
+              />
+            )}
             <span style={{ color: '#8c8c8c', fontSize: 12, textAlign: 'center' }}>
               Mit einer anderen DigiKladde per QR-Code beitreten. Dieses Gerät bleibt während des ersten Sync online.
             </span>

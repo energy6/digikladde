@@ -2,23 +2,53 @@ import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { URL } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
+import webPush from 'web-push';
 import { relayConfig } from './config.js';
 import {
+  ackQueuedMessagesForDevice,
   attachSessionToRoom,
   bufferMessage,
   canOpenConnectionForIp,
   createSession,
+  deletePushSubscriptionByEndpoint,
+  deletePushSubscriptionForDevice,
   deleteSession,
+  getPushSubscriptionForDevice,
   getOrCreateRoom,
   getRoom,
   getRoomSessions,
   getRoomSessionsByDevice,
+  listQueuedMessagesForDevice,
   markEventAndCheckRate,
+  pruneExpiredRoomState,
+  queueMessageForDevice,
   registerJoinAttemptAndCheckLimit,
+  setPushSubscriptionForDevice,
   snapshotStats,
   type Session,
 } from './state.js';
-import type { JoinRequestPayload, RelayEnvelope, RelayErrorCode } from './types.js';
+import type {
+  CatchupAckPayload,
+  CatchupRequestPayload,
+  JoinRequestPayload,
+  PushSubscriptionPayload,
+  RelayEnvelope,
+  RelayErrorCode,
+} from './types.js';
+
+const webPushEnabled = Boolean(
+  relayConfig.webPushPublicKey
+  && relayConfig.webPushPrivateKey
+  && relayConfig.webPushSubject,
+);
+
+if (webPushEnabled) {
+  webPush.setVapidDetails(
+    relayConfig.webPushSubject!,
+    relayConfig.webPushPublicKey!,
+    relayConfig.webPushPrivateKey!,
+  );
+}
 
 const forwardableTypes = new Set([
   'peer_key_request',
@@ -45,6 +75,10 @@ const log = (level: 'info' | 'warn' | 'error', message: string, context?: Record
   else if (level === 'warn') console.warn(serialized);
   else console.log(serialized);
 };
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+);
 
 const send = (session: Session, envelope: RelayEnvelope) => {
   if (session.ws.readyState !== session.ws.OPEN) return;
@@ -167,6 +201,115 @@ const handleTicketRefresh = (session: Session, envelope: RelayEnvelope) => {
   });
 };
 
+const handleCatchupRequest = (session: Session, envelope: RelayEnvelope) => {
+  const joined = requireJoinedSession(session, envelope);
+  if (!joined) return;
+
+  const room = getRoom(joined.roomId);
+  if (!room) {
+    sendError(session, 'invalid_event', 'Raum wurde nicht gefunden.', true);
+    return;
+  }
+
+  const payload = envelope.payload as Partial<CatchupRequestPayload> | undefined;
+  const rawAfterSeq = Number(payload?.afterSeq ?? 0);
+  const afterSeq = Number.isFinite(rawAfterSeq) && rawAfterSeq > 0 ? Math.floor(rawAfterSeq) : 0;
+  const messages = listQueuedMessagesForDevice(room, joined.deviceId, afterSeq);
+
+  send(session, {
+    version: 1,
+    type: 'catchup_response',
+    roomId: joined.roomId,
+    deviceId: joined.deviceId,
+    payload: { messages },
+  });
+};
+
+const handleCatchupAck = (session: Session, envelope: RelayEnvelope) => {
+  const joined = requireJoinedSession(session, envelope);
+  if (!joined) return;
+
+  const room = getRoom(joined.roomId);
+  if (!room) return;
+
+  const payload = envelope.payload as Partial<CatchupAckPayload> | undefined;
+  const rawThroughSeq = Number(payload?.throughSeq ?? 0);
+  if (!Number.isFinite(rawThroughSeq) || rawThroughSeq <= 0) return;
+
+  ackQueuedMessagesForDevice(room, joined.deviceId, Math.floor(rawThroughSeq));
+};
+
+const isPushSubscriptionPayload = (value: unknown): value is PushSubscriptionPayload => {
+  if (!isRecord(value)) return false;
+  const keys = value.keys;
+  return (
+    typeof value.endpoint === 'string'
+    && value.endpoint.length > 0
+    && isRecord(keys)
+    && typeof keys.p256dh === 'string'
+    && typeof keys.auth === 'string'
+  );
+};
+
+const handlePushSubscribe = (session: Session, envelope: RelayEnvelope) => {
+  const joined = requireJoinedSession(session, envelope);
+  if (!joined) return;
+
+  const room = getRoom(joined.roomId);
+  if (!room) {
+    sendError(session, 'invalid_event', 'Raum wurde nicht gefunden.', true);
+    return;
+  }
+
+  const subscription = envelope.payload?.subscription;
+  if (!isPushSubscriptionPayload(subscription)) {
+    sendError(session, 'invalid_event', 'push_subscribe ist unvollstaendig.');
+    return;
+  }
+
+  setPushSubscriptionForDevice(room, joined.deviceId, subscription);
+};
+
+const handlePushUnsubscribe = (session: Session, envelope: RelayEnvelope) => {
+  const joined = requireJoinedSession(session, envelope);
+  if (!joined) return;
+
+  const room = getRoom(joined.roomId);
+  if (!room) return;
+  deletePushSubscriptionForDevice(room, joined.deviceId);
+};
+
+const isDeltaSyncResponse = (envelope: RelayEnvelope): envelope is RelayEnvelope & { payload: Record<string, unknown> } => {
+  if (envelope.type !== 'sync_response' || !isRecord(envelope.payload)) return false;
+  return envelope.payload.kind === 'delta' && isRecord(envelope.payload.envelope);
+};
+
+const sendQueuedUpdatePush = async (roomId: string, deviceId: string) => {
+  if (!webPushEnabled) return;
+
+  const room = getRoom(roomId);
+  const subscription = room ? getPushSubscriptionForDevice(room, deviceId) : undefined;
+  if (!subscription) return;
+
+  try {
+    await webPush.sendNotification(subscription, JSON.stringify({
+      title: 'DigiKladde',
+      body: 'Neue Kursdaten verfügbar.',
+      data: {
+        roomId,
+      },
+    }));
+  } catch (error) {
+    const statusCode = isRecord(error) && typeof error.statusCode === 'number' ? error.statusCode : undefined;
+    if (statusCode === 404 || statusCode === 410) {
+      deletePushSubscriptionByEndpoint(subscription.endpoint);
+      return;
+    }
+
+    log('warn', 'web push failed', { roomId, deviceId, error: String(error) });
+  }
+};
+
 const forwardEvent = (session: Session, envelope: RelayEnvelope) => {
   const joined = requireJoinedSession(session, envelope);
   if (!joined) return;
@@ -198,6 +341,28 @@ const forwardEvent = (session: Session, envelope: RelayEnvelope) => {
     send(candidate, outbound);
   });
 
+  if (isDeltaSyncResponse(outbound)) {
+    const targetDeviceIds = envelope.targetDeviceId
+      ? [envelope.targetDeviceId]
+      : Array.from(room.knownDevices);
+
+    targetDeviceIds
+      .filter((deviceId) => deviceId !== joined.deviceId)
+      .forEach((targetDeviceId) => {
+        queueMessageForDevice(room, targetDeviceId, {
+          ts: now(),
+          fromDeviceId: joined.deviceId,
+          type: 'sync_response',
+          payload: outbound.payload,
+        });
+
+        const onlineSessions = getRoomSessionsByDevice(room, targetDeviceId);
+        if (onlineSessions.length === 0) {
+          void sendQueuedUpdatePush(joined.roomId, targetDeviceId);
+        }
+      });
+  }
+
   bufferMessage(room, {
     ts: now(),
     fromDeviceId: joined.deviceId,
@@ -219,6 +384,19 @@ const httpServer = createServer((req, res) => {
     };
     const body = JSON.stringify(health);
     res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(body);
+    return;
+  }
+
+  if (url.pathname === '/push/vapid-public-key') {
+    const body = JSON.stringify({
+      enabled: webPushEnabled,
+      publicKey: relayConfig.webPushPublicKey ?? null,
+    });
+    res.writeHead(200, {
+      'content-type': 'application/json',
+      'access-control-allow-origin': '*',
+    });
     res.end(body);
     return;
   }
@@ -305,6 +483,26 @@ wss.on('connection', (ws, session: Session) => {
       return;
     }
 
+    if (parsed.type === 'catchup_request') {
+      handleCatchupRequest(session, parsed);
+      return;
+    }
+
+    if (parsed.type === 'catchup_ack') {
+      handleCatchupAck(session, parsed);
+      return;
+    }
+
+    if (parsed.type === 'push_subscribe') {
+      handlePushSubscribe(session, parsed);
+      return;
+    }
+
+    if (parsed.type === 'push_unsubscribe') {
+      handlePushUnsubscribe(session, parsed);
+      return;
+    }
+
     forwardEvent(session, parsed);
   });
 
@@ -323,6 +521,8 @@ wss.on('connection', (ws, session: Session) => {
 });
 
 const heartbeatHandle = setInterval(() => {
+  pruneExpiredRoomState();
+
   wss.clients.forEach((client) => {
     const session = sessionsBySocket.get(client);
     if (session && session.lastSeenAt <= now() - relayConfig.idleTimeoutMs) {

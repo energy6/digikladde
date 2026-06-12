@@ -77,6 +77,17 @@ const base = process.env.GITHUB_ACTIONS === 'true' && repositoryName ? `/${repos
 // https://vite.dev/config/
 export default defineConfig({
   base,
+  preview: {
+    proxy: {
+      '/relay': {
+        target: 'ws://127.0.0.1:8080',
+        ws: true,
+      },
+      '/push': {
+        target: 'http://127.0.0.1:8080',
+      },
+    },
+  },
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
     __BUILD_TIMESTAMP_UTC__: JSON.stringify(buildTimestampUtc),
@@ -85,6 +96,9 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       registerType: 'autoUpdate',
       injectRegister: 'auto',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png', 'masked-icon.svg'],
@@ -116,7 +130,7 @@ export default defineConfig({
           },
         ],
       },
-      workbox: {
+      injectManifest: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest}'],
       },
     }),

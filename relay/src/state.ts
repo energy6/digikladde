@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type WebSocket from 'ws';
 import { relayConfig } from './config.js';
+import type { PushSubscriptionPayload, QueuedRelayMessage } from './types.js';
 
 export type Session = {
   id: string;
@@ -25,8 +26,13 @@ export type RoomState = {
   joinSecret: string;
   members: Set<string>; // session IDs
   byDeviceId: Map<string, Set<string>>; // device -> session IDs
+  knownDevices: Set<string>;
+  inboxesByDeviceId: Map<string, QueuedRelayMessage[]>;
+  nextQueueSeqByDeviceId: Map<string, number>;
+  pushSubscriptionsByDeviceId: Map<string, PushSubscriptionPayload>;
   joinAttemptsTimestamps: number[];
   messageBuffer: BufferedMessage[];
+  lastActiveAt: number;
 };
 
 const rooms = new Map<string, RoomState>();
@@ -55,6 +61,7 @@ export const createSession = (ws: WebSocket, ip: string): Session => {
 };
 
 export const deleteSession = (session: Session) => {
+  const disconnectedAt = Date.now();
   sessions.delete(session.id);
   const currentConnections = connectionCountByIp.get(session.ip) ?? 0;
   if (currentConnections <= 1) connectionCountByIp.delete(session.ip);
@@ -73,9 +80,7 @@ export const deleteSession = (session: Session) => {
     }
   }
 
-  if (!room.members.size) {
-    rooms.delete(room.roomId);
-  }
+  room.lastActiveAt = disconnectedAt;
 };
 
 export const canOpenConnectionForIp = (ip: string) => {
@@ -104,8 +109,13 @@ export const getOrCreateRoom = (roomId: string, joinSecret: string): RoomState =
     joinSecret,
     members: new Set<string>(),
     byDeviceId: new Map<string, Set<string>>(),
+    knownDevices: new Set<string>(),
+    inboxesByDeviceId: new Map<string, QueuedRelayMessage[]>(),
+    nextQueueSeqByDeviceId: new Map<string, number>(),
+    pushSubscriptionsByDeviceId: new Map<string, PushSubscriptionPayload>(),
     joinAttemptsTimestamps: [],
     messageBuffer: [],
+    lastActiveAt: Date.now(),
   };
   rooms.set(roomId, created);
   return created;
@@ -127,6 +137,8 @@ export const attachSessionToRoom = (session: Session, room: RoomState, deviceId:
   session.ticketExpiresAt = ticketExpiresAt;
 
   room.members.add(session.id);
+  room.knownDevices.add(deviceId);
+  room.lastActiveAt = Date.now();
   const bucket = room.byDeviceId.get(deviceId) ?? new Set<string>();
   bucket.add(session.id);
   room.byDeviceId.set(deviceId, bucket);
@@ -156,8 +168,108 @@ export const bufferMessage = (room: RoomState, message: BufferedMessage) => {
   }
 };
 
+export const queueMessageForDevice = (
+  room: RoomState,
+  targetDeviceId: string,
+  message: Omit<QueuedRelayMessage, 'seq'>,
+) => {
+  const seq = room.nextQueueSeqByDeviceId.get(targetDeviceId) ?? 1;
+  const queued: QueuedRelayMessage = {
+    ...message,
+    seq,
+  };
+
+  const inbox = room.inboxesByDeviceId.get(targetDeviceId) ?? [];
+  inbox.push(queued);
+  room.inboxesByDeviceId.set(targetDeviceId, inbox);
+  room.nextQueueSeqByDeviceId.set(targetDeviceId, seq + 1);
+  room.lastActiveAt = Date.now();
+
+  return queued;
+};
+
+export const listQueuedMessagesForDevice = (room: RoomState, deviceId: string, afterSeq: number) => {
+  const inbox = room.inboxesByDeviceId.get(deviceId) ?? [];
+  return inbox.filter((message) => message.seq > afterSeq);
+};
+
+export const ackQueuedMessagesForDevice = (room: RoomState, deviceId: string, throughSeq: number) => {
+  const inbox = room.inboxesByDeviceId.get(deviceId);
+  if (!inbox) return;
+
+  const remaining = inbox.filter((message) => message.seq > throughSeq);
+  if (remaining.length) {
+    room.inboxesByDeviceId.set(deviceId, remaining);
+  } else {
+    room.inboxesByDeviceId.delete(deviceId);
+  }
+
+  room.lastActiveAt = Date.now();
+};
+
+export const setPushSubscriptionForDevice = (
+  room: RoomState,
+  deviceId: string,
+  subscription: PushSubscriptionPayload,
+) => {
+  room.knownDevices.add(deviceId);
+  room.pushSubscriptionsByDeviceId.set(deviceId, subscription);
+  room.lastActiveAt = Date.now();
+};
+
+export const deletePushSubscriptionForDevice = (room: RoomState, deviceId: string) => {
+  room.pushSubscriptionsByDeviceId.delete(deviceId);
+  room.lastActiveAt = Date.now();
+};
+
+export const getPushSubscriptionForDevice = (room: RoomState, deviceId: string) => {
+  return room.pushSubscriptionsByDeviceId.get(deviceId);
+};
+
+export const deletePushSubscriptionByEndpoint = (endpoint: string) => {
+  rooms.forEach((room) => {
+    room.pushSubscriptionsByDeviceId.forEach((subscription, deviceId) => {
+      if (subscription.endpoint === endpoint) {
+        room.pushSubscriptionsByDeviceId.delete(deviceId);
+      }
+    });
+  });
+};
+
+export const pruneExpiredRoomState = (now = Date.now()) => {
+  rooms.forEach((room) => {
+    room.inboxesByDeviceId.forEach((inbox, deviceId) => {
+      const retained = inbox.filter((message) => message.ts > now - relayConfig.queueRetentionMs);
+      if (retained.length) {
+        room.inboxesByDeviceId.set(deviceId, retained);
+      } else {
+        room.inboxesByDeviceId.delete(deviceId);
+      }
+    });
+
+    if (
+      !room.members.size
+      && room.lastActiveAt <= now - relayConfig.queueRetentionMs
+      && room.inboxesByDeviceId.size === 0
+    ) {
+      rooms.delete(room.roomId);
+    }
+  });
+};
+
 export const snapshotStats = () => ({
   roomCount: rooms.size,
   sessionCount: sessions.size,
   connectionsByIp: connectionCountByIp.size,
+  queuedMessageCount: Array.from(rooms.values()).reduce((total, room) => (
+    total + Array.from(room.inboxesByDeviceId.values()).reduce((roomTotal, inbox) => roomTotal + inbox.length, 0)
+  ), 0),
+  pushSubscriptionCount: Array.from(rooms.values()).reduce((total, room) => total + room.pushSubscriptionsByDeviceId.size, 0),
 });
+
+export const resetStateForTests = () => {
+  rooms.clear();
+  sessions.clear();
+  connectionCountByIp.clear();
+  eventTimestampsByIp.clear();
+};
