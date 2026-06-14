@@ -22,6 +22,7 @@ type StudentPayload = {
   totalFlights?: number;
   flightSchool?: string;
   lastRatings?: Student['lastRatings'];
+  photoDataUrl?: string | null;
   updatedAt?: string;
   updatedByDeviceId?: string;
 };
@@ -87,6 +88,7 @@ const applyStudentUpsert = async (envelope: RelaySyncEnvelope): Promise<void> =>
   const payload = (envelope.payload ?? {}) as StudentPayload;
   const studentSyncId = payload.syncId;
   if (!studentSyncId) return;
+  const hasPhotoDataUrl = Object.prototype.hasOwnProperty.call(payload, 'photoDataUrl');
 
   const course = await ensureCourseBySyncId(envelope.courseSyncId);
   if (!course?.id) return;
@@ -110,6 +112,7 @@ const applyStudentUpsert = async (envelope: RelaySyncEnvelope): Promise<void> =>
       totalFlights: payload.totalFlights,
       flightSchool: sanitizeFlightSchoolName(payload.flightSchool),
       lastRatings: payload.lastRatings,
+      photoDataUrl: payload.photoDataUrl ?? undefined,
     };
 
     const id = Number(await db.students.add(created));
@@ -124,6 +127,7 @@ const applyStudentUpsert = async (envelope: RelaySyncEnvelope): Promise<void> =>
       totalFlights: payload.totalFlights ?? existingStudent.totalFlights,
       flightSchool: sanitizeFlightSchoolName(payload.flightSchool ?? existingStudent.flightSchool),
       lastRatings: payload.lastRatings ?? existingStudent.lastRatings,
+      photoDataUrl: hasPhotoDataUrl ? payload.photoDataUrl ?? undefined : existingStudent.photoDataUrl,
     };
 
     await db.students.update(existingStudent.id, updates);

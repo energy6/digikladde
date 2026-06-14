@@ -46,6 +46,7 @@ const ensureStudentSnapshotSyncIds = async (
       totalFlights: student.totalFlights ?? 0,
       flightSchool: sanitizeFlightSchoolName(student.flightSchool ?? course.flightSchool),
       lastRatings: student.lastRatings,
+      photoDataUrl: student.photoDataUrl,
     };
 
     if (!student.syncId || !student.updatedAt || !student.updatedByDeviceId) {
@@ -161,6 +162,7 @@ const upsertStudentBySyncId = async (
       totalFlights: snapshotStudent.totalFlights,
       flightSchool: incomingFlightSchool,
       lastRatings: snapshotStudent.lastRatings,
+      photoDataUrl: snapshotStudent.photoDataUrl,
     };
 
     const id = Number(await db.students.add(insert));
@@ -180,6 +182,7 @@ const upsertStudentBySyncId = async (
     totalFlights: snapshotStudent.totalFlights,
     flightSchool: incomingFlightSchool,
     lastRatings: snapshotStudent.lastRatings ?? existing.lastRatings,
+    photoDataUrl: snapshotStudent.photoDataUrl,
   };
 
   if (existing.id) {
@@ -217,6 +220,7 @@ export const importCourseSnapshot = async (
         totalFlights: resolved?.totalFlights ?? student.totalFlights,
         flightSchool: sanitizeFlightSchoolName(resolved?.flightSchool ?? student.flightSchool),
         lastRatings: resolved?.lastRatings ?? student.lastRatings,
+        photoDataUrl: resolved?.photoDataUrl ?? student.photoDataUrl,
       };
     });
 

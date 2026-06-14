@@ -2,6 +2,7 @@ import { List } from "antd";
 import type { Flight, Student } from "../models/types";
 import { durationFormatter, timeFormatter } from "../utils/DatetimeFormatter";
 import { formatRatingLabel } from "../utils/maneuverRatings";
+import StudentAvatar from "./StudentAvatar";
 
 interface StudentListItemProps {
   student: Student;
@@ -16,9 +17,17 @@ const StudentListItem = ({student, flight, nowTs}: StudentListItemProps) => {
 
   return (
     <List.Item.Meta
-      title={<span style={{ color: '#fff', fontWeight: 600 }}>{student.name} ({student.totalFlights ?? 0})</span>}
+      avatar={(
+        <StudentAvatar
+          name={student.name}
+          photoDataUrl={student.photoDataUrl}
+          size={44}
+          className="student-flight-avatar"
+        />
+      )}
+      title={<span className="student-flight-title">{student.name} ({student.totalFlights ?? 0})</span>}
       description={<>
-        <div style={{ color: '#deeeff' }}>
+        <div className="student-flight-description">
           <div>{student.glider} — {student.color}</div>
           <div>
             Flug: {timeFormatter.format(startTime)}

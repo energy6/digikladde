@@ -34,13 +34,7 @@ const PendingStudentListItem = ({
           onOpenRemarks(flight, student);
         }
       }}
-      style={{
-        background: '#1765ad',
-        borderRadius: 8,
-        paddingInline: 12,
-        paddingBlock: 6,
-        marginBottom: 6,
-      }}
+      className="student-pending-item"
       actions={[
         <Space orientation="horizontal" size="small" align="center">
           <Button

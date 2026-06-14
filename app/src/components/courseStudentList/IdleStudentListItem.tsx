@@ -5,6 +5,7 @@ import { Button, Checkbox, List, Space } from 'antd';
 import { useRef } from 'react';
 import type { Student } from '../../models/types';
 import { isDoubleTap } from '../../utils/doubleTap';
+import StudentAvatar from '../StudentAvatar';
 
 type IdleStudentListItemProps = {
   student: Student;
@@ -29,6 +30,9 @@ const IdleStudentListItem = ({
 }: IdleStudentListItemProps) => {
   const studentId = student.id;
   const lastTapRef = useRef(0);
+  const itemClassName = deleteMode
+    ? `student-idle-delete-item${isSelected ? ' student-idle-delete-item-selected' : ''}`
+    : 'student-idle-item';
 
   return (
     <List.Item
@@ -47,13 +51,7 @@ const IdleStudentListItem = ({
           void onOpenLastFlightRemarks(student);
         }
       }}
-      style={deleteMode ? {
-        cursor: 'pointer',
-        background: isSelected ? '#fff7e6' : undefined,
-        borderRadius: 8,
-        paddingInline: 8,
-        paddingBlock: 6,
-      } : { paddingBlock: 6 }}
+      className={itemClassName}
       extra={deleteMode ? (
         <Checkbox
           checked={isSelected}
@@ -84,13 +82,21 @@ const IdleStudentListItem = ({
       ]}
     >
       <List.Item.Meta
+        avatar={(
+          <StudentAvatar
+            name={student.name}
+            photoDataUrl={student.photoDataUrl}
+            size={44}
+            className="student-list-avatar"
+          />
+        )}
         title={(
           <span>
             {student.name} ({student.totalFlights ?? 0})
             {showRemarksIndicator ? (
               <FontAwesomeIcon
                 icon={faCircleExclamation}
-                style={{ color: '#d48806', marginLeft: 8 }}
+                className="student-remarks-indicator"
                 aria-label="Letzter Flug enthält Bemerkungen"
               />
             ) : null}
