@@ -1,13 +1,15 @@
 import { faFloppyDisk, faTowerBroadcast } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { Button, Input, Modal, Space, Typography } from 'antd';
+import { Button, Checkbox, Input, Modal, Space, Typography } from 'antd';
 import { useEffect, useState } from 'react';
+import { isPushNotificationSupported, registerPushNotifications, unsubscribePushNotifications } from '../../utils/pushNotifications';
 
 const { Text } = Typography;
 
 export type SettingsValues = {
   username: string;
   relayBaseUrl: string;
+  pushNotificationsEnabled: boolean;
 };
 
 type SettingsModalProps = {
@@ -51,6 +53,11 @@ const SettingsModal = ({ open, initialValues, onCancel, onSave }: SettingsModalP
   const [relayTestMessage, setRelayTestMessage] = useState<string | null>(null);
   const [relayTestOk, setRelayTestOk] = useState<boolean | null>(null);
   const [relayTestLoading, setRelayTestLoading] = useState(false);
+  const [pushNotificationsEnabled, setPushNotificationsEnabled] = useState(initialValues.pushNotificationsEnabled);
+  const [pushNotificationsSupported, setPushNotificationsSupported] = useState(false);
+  const [pushMessage, setPushMessage] = useState<string | null>(null);
+  const [pushMessageOk, setPushMessageOk] = useState<boolean | null>(null);
+  const [pushLoading, setPushLoading] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -61,6 +68,12 @@ const SettingsModal = ({ open, initialValues, onCancel, onSave }: SettingsModalP
     setRelayTestMessage(null);
     setRelayTestOk(null);
     setRelayTestLoading(false);
+    const pushSupported = isPushNotificationSupported();
+    setPushNotificationsEnabled(pushSupported && initialValues.pushNotificationsEnabled);
+    setPushNotificationsSupported(pushSupported);
+    setPushMessage(null);
+    setPushMessageOk(null);
+    setPushLoading(false);
   }, [initialValues, open]);
 
   const handleTestRelay = async () => {
@@ -137,7 +150,68 @@ const SettingsModal = ({ open, initialValues, onCancel, onSave }: SettingsModalP
     onSave({
       username: normalizedUsername,
       relayBaseUrl: normalizedRelayBaseUrl,
+      pushNotificationsEnabled,
     });
+  };
+
+  const handlePushNotificationsChange = async (checked: boolean) => {
+    setPushMessage(null);
+    setPushMessageOk(null);
+
+    if (!checked) {
+      setPushNotificationsEnabled(false);
+      try {
+        await unsubscribePushNotifications();
+      } catch {
+        // The saved setting still controls future relay registrations.
+      }
+      return;
+    }
+
+    const normalizedRelayBaseUrl = normalizeRelayBaseUrl(relayBaseUrl);
+
+    if (!normalizedRelayBaseUrl) {
+      setRelayUrlError('Bitte eine gültige absolute URL angeben, z.B. https://digikladde.aircursion.de');
+      setPushMessage('Push-Benachrichtigungen benötigen eine gültige Relay-URL.');
+      setPushMessageOk(false);
+      return;
+    }
+
+    setPushLoading(true);
+    setRelayUrlError(null);
+
+    try {
+      const result = await registerPushNotifications(normalizedRelayBaseUrl);
+
+      if (result.status === 'subscribed') {
+        setPushNotificationsEnabled(true);
+        setPushMessage('Push-Benachrichtigungen sind aktiv.');
+        setPushMessageOk(true);
+        return;
+      }
+
+      if (result.status === 'denied') {
+        setPushMessage('Benachrichtigungen wurden vom Browser blockiert.');
+        setPushMessageOk(false);
+        return;
+      }
+
+      if (result.status === 'unsupported') {
+        setPushNotificationsEnabled(false);
+        setPushNotificationsSupported(false);
+        setPushMessage('Dieses Gerät unterstützt keine Web-Push-Benachrichtigungen.');
+        setPushMessageOk(false);
+        return;
+      }
+
+      setPushMessage('Benachrichtigungen sind am Relay nicht konfiguriert.');
+      setPushMessageOk(false);
+    } catch {
+      setPushMessage('Push-Benachrichtigungen konnten nicht aktiviert werden.');
+      setPushMessageOk(false);
+    } finally {
+      setPushLoading(false);
+    }
   };
 
   return (
@@ -169,6 +243,10 @@ const SettingsModal = ({ open, initialValues, onCancel, onSave }: SettingsModalP
             onChange={(event) => {
               setRelayBaseUrl(event.target.value);
               if (relayUrlError) setRelayUrlError(null);
+              if (pushMessage) {
+                setPushMessage(null);
+                setPushMessageOk(null);
+              }
               if (relayTestMessage) {
                 setRelayTestMessage(null);
                 setRelayTestOk(null);
@@ -186,6 +264,20 @@ const SettingsModal = ({ open, initialValues, onCancel, onSave }: SettingsModalP
         {relayUrlError ? <Text type="danger">{relayUrlError}</Text> : null}
         {relayTestMessage ? (
           <Text type={relayTestOk === false ? 'danger' : 'success'}>{relayTestMessage}</Text>
+        ) : null}
+
+        <Checkbox
+          checked={pushNotificationsEnabled}
+          disabled={!pushNotificationsSupported || pushLoading}
+          onChange={(event) => void handlePushNotificationsChange(event.target.checked)}
+        >
+          Push-Benachrichtigungen
+        </Checkbox>
+        {!pushNotificationsSupported ? (
+          <Text type="secondary">Dieses Gerät unterstützt keine Web-Push-Benachrichtigungen.</Text>
+        ) : null}
+        {pushMessage ? (
+          <Text type={pushMessageOk === false ? 'danger' : 'success'}>{pushMessage}</Text>
         ) : null}
       </Space>
     </Modal>
