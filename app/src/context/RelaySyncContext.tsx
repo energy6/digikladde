@@ -14,7 +14,7 @@ import { createId, createJoinSecret } from '../utils/idGenerator';
 import { applyRemoteDeltaEnvelope } from '../utils/syncApply';
 import { ingestRemoteDeltaEvent, listCourseDeltaEvents, listRoomDeltaEvents, logLocalDeltaEvent } from '../utils/syncEvents';
 import { exportCourseSnapshot, importCourseSnapshot } from '../utils/syncSnapshot';
-import { getExistingPushSubscription, registerPushNotifications, type PushRegistrationResult } from '../utils/pushNotifications';
+import { getExistingPushSubscription, registerPushNotifications } from '../utils/pushNotifications';
 import { isCourseSyncSnapshot, isRelaySyncEnvelope } from '../utils/typeGuards';
 
 type StartShareSessionInput = {
@@ -63,7 +63,6 @@ type RelaySyncContextValue = {
   connectCourseSession: (courseId: number) => Promise<void>;
   disconnectCourseSession: (courseId: number) => Promise<void>;
   sendPendingDeltas: (courseId: number) => Promise<number>;
-  enablePushNotifications: (courseId: number) => Promise<PushRegistrationResult>;
   subscribeSnapshotImports: (courseId: number, listener: (importedCourseId: number) => void) => () => void;
   subscribeCourseChanges: (courseId: number, listener: () => void) => () => void;
   waitForInitialSnapshot: (courseId: number, timeoutMs?: number) => Promise<number | null>;
@@ -73,6 +72,7 @@ type RelaySyncProviderProps = {
   children: ReactNode;
   username: string;
   relayBaseUrl: string;
+  pushNotificationsEnabled: boolean;
 };
 
 const DEVICE_ID_STORAGE_KEY = 'digikladde.deviceId';
@@ -166,7 +166,7 @@ const ensureCourseSyncId = async (courseId: number): Promise<{ course: Course; c
   };
 };
 
-export const RelaySyncProvider = ({ children, username, relayBaseUrl }: RelaySyncProviderProps) => {
+export const RelaySyncProvider = ({ children, username, relayBaseUrl, pushNotificationsEnabled }: RelaySyncProviderProps) => {
   const deviceId = useMemo(() => readOrCreateDeviceId(), []);
   const normalizedRelayBaseUrl = useMemo(() => normalizeRelayBaseUrl(relayBaseUrl), [relayBaseUrl]);
   const connectionsRef = useRef<Map<string, ConnectionState>>(new Map());
@@ -446,21 +446,6 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl }: RelaySyn
     return sendDeltaEventsOverConnection(connection);
   }, [sendDeltaEventsOverConnection]);
 
-  const waitForConnectionTicket = useCallback(async (courseSyncId: string, timeoutMs = 5000): Promise<ConnectionState | null> => {
-    const startedAt = Date.now();
-
-    while (Date.now() - startedAt < timeoutMs) {
-      const connection = connectionsRef.current.get(courseSyncId);
-      if (connection?.ticket && connection.ws.readyState === WebSocket.OPEN) {
-        return connection;
-      }
-
-      await new Promise((resolve) => window.setTimeout(resolve, 100));
-    }
-
-    return null;
-  }, []);
-
   const sendPushSubscriptionOverConnection = useCallback(async (connection: ConnectionState, subscription: PushSubscription): Promise<void> => {
     if (connection.ws.readyState !== WebSocket.OPEN || !connection.ticket) return;
 
@@ -486,6 +471,40 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl }: RelaySyn
       });
     }
   }, [deviceId]);
+
+  const sendPushUnsubscribeOverConnection = useCallback((connection: ConnectionState): void => {
+    if (connection.ws.readyState !== WebSocket.OPEN || !connection.ticket) return;
+
+    const message: RelayMessage = {
+      version: 1,
+      type: 'push_unsubscribe',
+      roomId: connection.roomId,
+      deviceId,
+      ticket: connection.ticket,
+      seq: connection.seq++,
+    };
+
+    connection.ws.send(JSON.stringify(message));
+  }, [deviceId]);
+
+  const registerPushForConnection = useCallback(async (connection: ConnectionState): Promise<void> => {
+    if (!pushNotificationsEnabled) return;
+
+    const existing = await getExistingPushSubscription();
+    if (existing) {
+      await sendPushSubscriptionOverConnection(connection, existing);
+      return;
+    }
+
+    const session = await db.shareSessions.where('courseSyncId').equals(connection.courseSyncId).first();
+    const result = await registerPushNotifications(session?.relayBaseUrl || normalizedRelayBaseUrl, {
+      requestPermission: false,
+    });
+
+    if (result.status === 'subscribed') {
+      await sendPushSubscriptionOverConnection(connection, result.subscription);
+    }
+  }, [normalizedRelayBaseUrl, pushNotificationsEnabled, sendPushSubscriptionOverConnection]);
 
   const disconnectCourseSession = useCallback(async (courseId: number): Promise<void> => {
     const { courseSyncId } = await ensureCourseSyncId(courseId);
@@ -625,11 +644,7 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl }: RelaySyn
       ws.send(JSON.stringify(syncRequest));
       void sendDeltaEventsOverConnection(connection);
 
-      void getExistingPushSubscription().then((subscription) => {
-        if (subscription) {
-          void sendPushSubscriptionOverConnection(connection, subscription);
-        }
-      });
+      void registerPushForConnection(connection);
     };
 
     const handleSyncRequest = (incoming: RelayMessage) => {
@@ -813,28 +828,22 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl }: RelaySyn
     emitSnapshotImport,
     deviceId,
     normalizedRelayBaseUrl,
+    registerPushForConnection,
     sendDeltaEventsOverConnection,
     touchShareSession,
     updateRelayQueueCursor,
     updateShareSessionState,
-    sendPushSubscriptionOverConnection,
   ]);
 
-  const enablePushNotifications = useCallback(async (courseId: number): Promise<PushRegistrationResult> => {
-    const { courseSyncId } = await ensureCourseSyncId(courseId);
-    const session = await db.shareSessions.where('courseSyncId').equals(courseSyncId).first();
-    if (!session) return { status: 'unavailable' };
-
-    const result = await registerPushNotifications(session.relayBaseUrl || normalizedRelayBaseUrl);
-    if (result.status !== 'subscribed') return result;
-
-    await connectCourseSession(courseId);
-    const connection = await waitForConnectionTicket(courseSyncId);
-    if (!connection) return { status: 'unavailable' };
-
-    await sendPushSubscriptionOverConnection(connection, result.subscription);
-    return result;
-  }, [connectCourseSession, normalizedRelayBaseUrl, sendPushSubscriptionOverConnection, waitForConnectionTicket]);
+  useEffect(() => {
+    for (const connection of connectionsRef.current.values()) {
+      if (pushNotificationsEnabled) {
+        void registerPushForConnection(connection);
+      } else {
+        sendPushUnsubscribeOverConnection(connection);
+      }
+    }
+  }, [pushNotificationsEnabled, registerPushForConnection, sendPushUnsubscribeOverConnection]);
 
   useEffect(() => {
     reconnectCourseSessionRef.current = (courseIdValue: number) => {
@@ -910,7 +919,6 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl }: RelaySyn
     connectCourseSession,
     disconnectCourseSession,
     sendPendingDeltas,
-    enablePushNotifications,
     subscribeSnapshotImports,
     subscribeCourseChanges,
     waitForInitialSnapshot,
@@ -918,7 +926,6 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl }: RelaySyn
     connectCourseSession,
     deviceId,
     disconnectCourseSession,
-    enablePushNotifications,
     exportSnapshot,
     getShareSession,
     ingestRemoteDelta,

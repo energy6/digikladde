@@ -1,4 +1,4 @@
-import { BellOutlined, LinkOutlined, ReloadOutlined } from '@ant-design/icons';
+import { LinkOutlined, ReloadOutlined } from '@ant-design/icons';
 import { Button, Card, Input, Modal, Space, Tag, Tooltip, message } from 'antd';
 import { QRCodeSVG } from 'qrcode.react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -32,11 +32,10 @@ const CourseSyncFooter = ({ course }: Props) => {
     connectCourseSession,
     disconnectCourseSession,
     sendPendingDeltas,
-    enablePushNotifications,
   } = useRelaySync();
 
   const [shareSession, setShareSession] = useState<ShareSession | null>(null);
-  const [busyAction, setBusyAction] = useState<'share' | 'resync' | 'push' | null>(null);
+  const [busyAction, setBusyAction] = useState<'share' | 'resync' | null>(null);
   const [qrShareModalOpen, setQrShareModalOpen] = useState(false);
   const [webShareAvailable, setWebShareAvailable] = useState(false);
   const isSharedCourse = useMemo(() => Boolean(shareSession?.courseSyncId), [shareSession?.courseSyncId]);
@@ -106,37 +105,6 @@ const CourseSyncFooter = ({ course }: Props) => {
       message.success('Resync gestartet – neuer Snapshot wird angefordert.');
     } catch {
       message.error('Resync fehlgeschlagen.');
-    } finally {
-      setBusyAction(null);
-    }
-  };
-
-  const handleEnablePush = async () => {
-    if (!course.id) return;
-
-    try {
-      setBusyAction('push');
-      const result = await enablePushNotifications(course.id);
-
-      if (result.status === 'subscribed') {
-        await refreshShareSession();
-        message.success('Benachrichtigungen für diesen Kurs sind aktiv.');
-        return;
-      }
-
-      if (result.status === 'denied') {
-        message.error('Benachrichtigungen wurden vom Browser blockiert.');
-        return;
-      }
-
-      if (result.status === 'unsupported') {
-        message.error('Dieses Gerät unterstützt keine Web-Push-Benachrichtigungen.');
-        return;
-      }
-
-      message.error('Benachrichtigungen sind am Relay nicht konfiguriert.');
-    } catch {
-      message.error('Benachrichtigungen konnten nicht aktiviert werden.');
     } finally {
       setBusyAction(null);
     }
@@ -222,13 +190,6 @@ const CourseSyncFooter = ({ course }: Props) => {
           <Space size={6}>
             {isSharedCourse && (
               <>
-                <Tooltip title="Benachrichtigung bei wartenden Updates aktivieren">
-                  <Button
-                    icon={<BellOutlined />}
-                    onClick={() => void handleEnablePush()}
-                    loading={busyAction === 'push'}
-                  />
-                </Tooltip>
                 <Tooltip title="Ausstehende Updates senden und neuen Snapshot anfordern">
                   <Button
                     icon={<ReloadOutlined />}

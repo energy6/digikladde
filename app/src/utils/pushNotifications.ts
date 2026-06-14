@@ -6,10 +6,22 @@ type VapidKeyResponse = {
 export type PushRegistrationResult =
   | { status: 'subscribed'; subscription: PushSubscription }
   | { status: 'unsupported' }
+  | { status: 'permission_required' }
   | { status: 'denied' }
   | { status: 'unavailable' };
 
+type PushRegistrationOptions = {
+  requestPermission?: boolean;
+};
+
 const normalizeRelayBaseUrl = (value: string): string => value.trim().replace(/\/+$/, '');
+
+export const isPushNotificationSupported = (): boolean => (
+  typeof window !== 'undefined'
+  && 'serviceWorker' in navigator
+  && 'PushManager' in window
+  && 'Notification' in window
+);
 
 const urlBase64ToUint8Array = (base64String: string): Uint8Array<ArrayBuffer> => {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -37,14 +49,24 @@ const fetchVapidPublicKey = async (relayBaseUrl: string): Promise<string | null>
   return payload.publicKey;
 };
 
-export const registerPushNotifications = async (relayBaseUrl: string): Promise<PushRegistrationResult> => {
-  if (
-    typeof window === 'undefined'
-    || !('serviceWorker' in navigator)
-    || !('PushManager' in window)
-    || !('Notification' in window)
-  ) {
+export const registerPushNotifications = async (
+  relayBaseUrl: string,
+  options: PushRegistrationOptions = {},
+): Promise<PushRegistrationResult> => {
+  if (!isPushNotificationSupported()) {
     return { status: 'unsupported' };
+  }
+
+  if (Notification.permission === 'denied') {
+    return { status: 'denied' };
+  }
+
+  const publicKey = await fetchVapidPublicKey(relayBaseUrl);
+  if (!publicKey) return { status: 'unavailable' };
+
+  const shouldRequestPermission = options.requestPermission ?? true;
+  if (Notification.permission === 'default' && !shouldRequestPermission) {
+    return { status: 'permission_required' };
   }
 
   const permission = Notification.permission === 'granted'
@@ -52,9 +74,6 @@ export const registerPushNotifications = async (relayBaseUrl: string): Promise<P
     : await Notification.requestPermission();
 
   if (permission !== 'granted') return { status: 'denied' };
-
-  const publicKey = await fetchVapidPublicKey(relayBaseUrl);
-  if (!publicKey) return { status: 'unavailable' };
 
   const registration = await navigator.serviceWorker.ready;
   const existing = await registration.pushManager.getSubscription();
@@ -69,14 +88,16 @@ export const registerPushNotifications = async (relayBaseUrl: string): Promise<P
 };
 
 export const getExistingPushSubscription = async (): Promise<PushSubscription | null> => {
-  if (
-    typeof window === 'undefined'
-    || !('serviceWorker' in navigator)
-    || !('PushManager' in window)
-  ) {
+  if (!isPushNotificationSupported()) {
     return null;
   }
 
   const registration = await navigator.serviceWorker.ready;
   return registration.pushManager.getSubscription();
+};
+
+export const unsubscribePushNotifications = async (): Promise<boolean> => {
+  const subscription = await getExistingPushSubscription();
+  if (!subscription) return false;
+  return subscription.unsubscribe();
 };

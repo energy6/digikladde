@@ -74,6 +74,7 @@ const readInitialSettings = (): SettingsValues => {
   const fallback: SettingsValues = {
     username: deriveDefaultUsername(),
     relayBaseUrl: readDefaultRelayBaseUrl(),
+    pushNotificationsEnabled: false,
   };
 
   if (typeof window === 'undefined') return fallback;
@@ -86,8 +87,9 @@ const readInitialSettings = (): SettingsValues => {
 
     const username = sanitizeUsername(typeof parsed.username === 'string' ? parsed.username : '') || fallback.username;
     const relayBaseUrl = normalizeRelayBaseUrl(typeof parsed.relayBaseUrl === 'string' ? parsed.relayBaseUrl : '') ?? fallback.relayBaseUrl;
+    const pushNotificationsEnabled = parsed.pushNotificationsEnabled === true;
 
-    return { username, relayBaseUrl };
+    return { username, relayBaseUrl, pushNotificationsEnabled };
   } catch {
     return fallback;
   }
@@ -139,7 +141,11 @@ function App() {
   return (
     <Router>
       <FlightSchoolProvider>
-        <RelaySyncProvider username={settings.username} relayBaseUrl={settings.relayBaseUrl}>
+        <RelaySyncProvider
+          username={settings.username}
+          relayBaseUrl={settings.relayBaseUrl}
+          pushNotificationsEnabled={settings.pushNotificationsEnabled}
+        >
           <Layout className="app-layout">
         <Header className="app-header" style={{ background: '#0a2239', display: 'flex', alignItems: 'center', padding: '0 24px' }}>
           <Space size={8} align="center">
