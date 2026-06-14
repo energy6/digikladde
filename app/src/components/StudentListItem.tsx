@@ -8,9 +8,15 @@ interface StudentListItemProps {
   nowTs: number;
 }
 
+const formatManeuver = (maneuver: string, student: Student): string => {
+  const rating = student.lastRatings?.[maneuver];
+  return typeof rating === 'number' ? `${maneuver} (${rating})` : maneuver;
+};
+
 const StudentListItem = ({student, flight, nowTs}: StudentListItemProps) => {
   const startTime = new Date(flight.startTime);
   const landingTime = flight.landingMarkedAt ? new Date(flight.landingMarkedAt) : null;
+  const maneuverText = flight.maneuvers.map((maneuver) => formatManeuver(maneuver, student)).join(', ');
 
   return (
     <List.Item.Meta
@@ -23,7 +29,7 @@ const StudentListItem = ({student, flight, nowTs}: StudentListItemProps) => {
             {landingTime && ` - ${timeFormatter.format(landingTime)}`}
             {` | ${durationFormatter(startTime.getTime(), landingTime ? landingTime.getTime() : nowTs)}`}
           </div>
-          {flight.maneuvers && <div>{`Manöver: ${flight.maneuvers.join(', ')}`}</div>}
+          {maneuverText ? <div>{`Manöver: ${maneuverText}`}</div> : null}
         </div>
       </>}
     />

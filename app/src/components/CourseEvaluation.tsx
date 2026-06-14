@@ -4,7 +4,7 @@ import { Button, Card, Collapse, List, Space, Typography } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { db } from '../db/database';
-import type { Course, Flight, FlightDetails } from '../models/types';
+import { landingRatingKey, startRatingKey, type Course, type Flight, type FlightDetails } from '../models/types';
 import { dateFormatter, durationFormatter, timeFormatter } from '../utils/DatetimeFormatter';
 import { generatePDF } from '../utils/pdfExport';
 import CourseHeader from './CourseHeader';
@@ -31,6 +31,17 @@ const renderFlightDetails = (details?: FlightDetails) => {
     </div>
   );
 };
+
+const formatFlightRating = (label: string, flight: Flight): string => {
+  const rating = flight.ratings?.[label];
+  return typeof rating === 'number' ? `${label} (${rating})` : label;
+};
+
+const renderFlightRatings = (flight: Flight): string => (
+  [startRatingKey, ...flight.maneuvers, landingRatingKey]
+    .map((label) => formatFlightRating(label, flight))
+    .join(', ')
+);
 
 const CourseEvaluation = () => {
   const { id } = useParams();
@@ -131,7 +142,7 @@ const CourseEvaluation = () => {
                                       &nbsp;- {flight.endTime ? timeFormatter.format(new Date(flight.endTime)) : 'laufend'}
                                       &nbsp;| {durationFormatter(Date.parse(flight.startTime), flight.endTime ? Date.parse(flight.endTime) : undefined)}
                                     </Text>
-                                    {flight.maneuvers && <Text>Manöver: {flight.maneuvers.join(', ')}</Text>}
+                                    <Text>{renderFlightRatings(flight)}</Text>
                                     {renderFlightDetails(flight.details)}
                                     {flight.remarks && <Text>{flight.remarks.map(r => (<div>{r}</div>))}</Text>}
                                   </Space>

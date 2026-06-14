@@ -1,7 +1,9 @@
 import { faCheck, faMicrophone } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { Button, Checkbox, Form, Input, Modal, Space, Typography } from 'antd';
-import { maneuvers } from '../../models/types';
+import { Button, Form, Input, Modal, Slider, Space, Typography } from 'antd';
+import { Fragment } from 'react';
+import { landingRatingKey, startRatingKey, type ManeuverRatings } from '../../models/types';
+import ManeuverDropdown from '../ManeuverDropdown';
 
 const { Text } = Typography;
 
@@ -18,6 +20,8 @@ type RemarksModalProps = {
   existingRemarks: string[];
   newRemark: string;
   selectedManeuvers: string[];
+  ratings: ManeuverRatings;
+  lastRatings: ManeuverRatings;
   maneuversEnabled: boolean;
   canSave: boolean;
   isListening: boolean;
@@ -26,6 +30,7 @@ type RemarksModalProps = {
   onSave: () => void;
   onNewRemarkChange: (value: string) => void;
   onSelectedManeuversChange: (values: string[]) => void;
+  onRatingChange: (key: string, value: number) => void;
 };
 
 const RemarksModal = ({
@@ -36,6 +41,8 @@ const RemarksModal = ({
   existingRemarks,
   newRemark,
   selectedManeuvers,
+  ratings,
+  lastRatings,
   maneuversEnabled,
   canSave,
   isListening,
@@ -44,7 +51,16 @@ const RemarksModal = ({
   onSave,
   onNewRemarkChange,
   onSelectedManeuversChange,
+  onRatingChange,
 }: RemarksModalProps) => {
+  const ratingKeys = selectedRemarkFlight || ratings[startRatingKey] !== undefined || selectedManeuvers.length
+    ? [startRatingKey, ...selectedManeuvers, landingRatingKey]
+    : [];
+  const formatRatingLabel = (ratingKey: string): string => {
+    const lastRating = lastRatings[ratingKey];
+    return typeof lastRating === 'number' ? `${ratingKey} (${lastRating})` : ratingKey;
+  };
+
   return (
     <Modal
       title={selectedRemarkFlight ? `Bemerkung: ${selectedRemarkFlight.studentName}` : 'Bemerkung'}
@@ -94,16 +110,39 @@ const RemarksModal = ({
         </Form.Item>
 
         <Form.Item
-          label="Manöver"
+          className="remarks-grid-form-item"
           style={{ marginBottom: 0, display: remarksReadOnly || !maneuversEnabled ? 'none' : 'block' }}
         >
-          <Checkbox.Group
-            options={maneuvers}
-            value={selectedManeuvers}
-            onChange={(values) => onSelectedManeuversChange(values.map((value) => String(value)))}
-            style={{ width: '100%' }}
-          />
+          <div className="remarks-rating-grid">
+            <Text className="remarks-rating-label">Manöver</Text>
+            <ManeuverDropdown
+              value={selectedManeuvers}
+              lastRatings={lastRatings}
+              onChange={onSelectedManeuversChange}
+            />
+          </div>
         </Form.Item>
+
+        {ratingKeys.length ? (
+          <div className="remarks-rating-grid">
+            {ratingKeys.map((ratingKey) => (
+              <Fragment key={ratingKey}>
+                <Text className="remarks-rating-label">
+                  {formatRatingLabel(ratingKey)}
+                </Text>
+                <Slider
+                  min={0}
+                  max={10}
+                  step={1}
+                  tooltip={{ formatter: null }}
+                  value={ratings[ratingKey] ?? 0}
+                  disabled={remarksReadOnly}
+                  onChange={(value) => onRatingChange(ratingKey, value)}
+                />
+              </Fragment>
+            ))}
+          </div>
+        ) : null}
       </Space>
     </Modal>
   );

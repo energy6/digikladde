@@ -37,6 +37,7 @@ export interface Student extends SyncMetadata {
   color: string;
   totalFlights: number;
   flightSchool: string;
+  lastRatings?: ManeuverRatings;
 }
 
 export interface FlightDetails {
@@ -54,6 +55,7 @@ export interface Flight extends SyncMetadata {
   courseId: number;
   studentId: number;
   maneuvers: string[];
+  ratings?: ManeuverRatings;
   remarks?: string[];
   details?: FlightDetails;
   startTime: string;
@@ -62,6 +64,11 @@ export interface Flight extends SyncMetadata {
   landingFinalizedAt?: string;
   endTime?: string;
 }
+
+export type ManeuverRatings = Record<string, number>;
+
+export const startRatingKey = 'Start';
+export const landingRatingKey = 'Landung';
 
 export const maneuvers = [
   'Ohren anlegen',
@@ -120,12 +127,14 @@ export interface SharedStudentSnapshot extends SyncMetadata {
   color: string;
   totalFlights: number;
   flightSchool: string;
+  lastRatings?: ManeuverRatings;
 }
 
 export interface SharedFlightSnapshot extends SyncMetadata {
   syncId: string;
   studentSyncId: string;
   maneuvers: string[];
+  ratings?: ManeuverRatings;
   remarks?: string[];
   details?: FlightDetails;
   startTime: string;

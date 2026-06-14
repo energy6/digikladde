@@ -1,7 +1,9 @@
 import { faBackwardStep, faForwardStep } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { Button, List, Space } from 'antd';
+import { useRef } from 'react';
 import type { Flight, Student } from '../../models/types';
+import { isDoubleTap } from '../../utils/doubleTap';
 import StudentListItem from '../StudentListItem';
 
 type PendingStudentListItemProps = {
@@ -22,10 +24,16 @@ const PendingStudentListItem = ({
   onTerminateFlight,
 }: PendingStudentListItemProps) => {
   const flightId = flight.id;
+  const lastTapRef = useRef(0);
 
   return (
     <List.Item
       onDoubleClick={() => onOpenRemarks(flight, student)}
+      onPointerUp={(event) => {
+        if (isDoubleTap(event, lastTapRef)) {
+          onOpenRemarks(flight, student);
+        }
+      }}
       style={{
         background: '#1765ad',
         borderRadius: 8,

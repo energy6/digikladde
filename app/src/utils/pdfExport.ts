@@ -1,5 +1,5 @@
 import { jsPDF as jsPDFNamed } from 'jspdf';
-import type { Course, CourseType, Flight, Student } from '../models/types';
+import { landingRatingKey, startRatingKey, type Course, type CourseType, type Flight, type ManeuverRatings, type Student } from '../models/types';
 import { durationFormatter } from './DatetimeFormatter';
 import { UNKNOWN_FLIGHT_SCHOOL } from './flightSchool';
 
@@ -26,7 +26,7 @@ type StudentCourseStats = {
   flights: number;
   totalFlightsAfterCourse: number;
   totalFlightMinutes: number;
-  maneuvers: string;
+  ratings: string;
 };
 
 type GenerateCoursePDFOptions = {
@@ -69,7 +69,7 @@ const getTableColumns = (courseType: CourseType): TableColumn[] => {
       { key: 'duration', label: 'Dauer', width: 12 },
       { key: 'terrainTeacher', label: 'Gelände / Lehrer', width: 44 },
       { key: 'startLeader', label: 'Startleiter', width: 24 },
-      { key: 'maneuvers', label: 'Manöver', width: 70 },
+      { key: 'maneuvers', label: 'Bewertung', width: 70 },
     ];
   }
 
@@ -80,7 +80,7 @@ const getTableColumns = (courseType: CourseType): TableColumn[] => {
     { key: 'duration', label: 'Dauer', width: 12 },
     { key: 'startInfo', label: 'Startplatz / Lehrer', width: 38 },
     { key: 'landInfo', label: 'Landeplatz / Lehrer', width: 38 },
-    { key: 'maneuvers', label: 'Manöver', width: 62 },
+    { key: 'maneuvers', label: 'Bewertung', width: 62 },
   ];
 };
 
@@ -110,7 +110,7 @@ const getFlightCellValue = (flight: Flight, rowNo: number, courseType: CourseTyp
     startTime: timeFormatter.format(startDate),
     landingTime: endDate ? timeFormatter.format(endDate) : '-',
     duration: durationFormatter(startDate.getTime(), endDate ? endDate.getTime() : undefined),
-    maneuvers: flight.maneuvers.length ? flight.maneuvers.join(', ') : '-',
+    maneuvers: buildRatingLabels(flight.maneuvers, flight.ratings),
     terrainTeacher: `${terrain} / ${teacher}`,
     startLeader: flight.details?.startLeiter ?? '-',
     startInfo: `${startPlace} / ${startTeacher}`,
@@ -120,7 +120,7 @@ const getFlightCellValue = (flight: Flight, rowNo: number, courseType: CourseTyp
   if (courseType === 'Grundkurs') {
     values.startInfo = '-';
     values.landInfo = '-';
-    values.maneuvers = '-';
+    values.maneuvers = buildRatingLabels([], flight.ratings);
   }
 
   if (courseType === 'Windenkurs') {
@@ -205,6 +205,17 @@ const formatTotalMinutes = (totalMinutes: number) => {
   return `${hours}:${pad2(minutes)}`;
 };
 
+const formatRatingLabel = (label: string, ratings?: ManeuverRatings): string => {
+  const rating = ratings?.[label];
+  return typeof rating === 'number' ? `${label} (${rating})` : label;
+};
+
+const buildRatingLabels = (maneuvers: string[], ratings?: ManeuverRatings): string => (
+  [startRatingKey, ...maneuvers, landingRatingKey]
+    .map((label) => formatRatingLabel(label, ratings))
+    .join(', ')
+);
+
 export const createCoursePDFDoc = (
   course: Course,
   flights: Flight[],
@@ -246,13 +257,14 @@ export const createCoursePDFDoc = (
         maneuverSet.add(maneuver);
       });
     });
+    const summaryManeuvers = Array.from(maneuverSet);
 
     return {
       name: student.name,
       flights: studentFlights.length,
       totalFlightsAfterCourse: student.totalFlights,
       totalFlightMinutes,
-      maneuvers: maneuverSet.size ? Array.from(maneuverSet).join(', ') : '-',
+      ratings: buildRatingLabels(summaryManeuvers, student.lastRatings),
     };
   });
 
@@ -272,13 +284,17 @@ export const createCoursePDFDoc = (
         maneuverSet.add(maneuver);
       });
     });
+    const summaryManeuvers = Array.from(maneuverSet);
+    const latestRatings = studentFlights
+      .filter((flight) => flight.ratings)
+      .sort((a, b) => b.startTime.localeCompare(a.startTime))[0]?.ratings;
 
     courseStatsRows.push({
       name: knownStudent?.name ?? `Unbekannt #${studentId}`,
       flights: studentFlights.length,
       totalFlightsAfterCourse: knownStudent?.totalFlights ?? studentFlights.length,
       totalFlightMinutes,
-      maneuvers: maneuverSet.size ? Array.from(maneuverSet).join(', ') : '-',
+      ratings: buildRatingLabels(summaryManeuvers, knownStudent?.lastRatings ?? latestRatings),
     });
   });
 
@@ -372,7 +388,7 @@ export const createCoursePDFDoc = (
     { key: 'name', label: 'Name', width: 62 },
     { key: 'flights', label: 'Flüge', width: 18 },
     { key: 'flightTime', label: 'Flugzeit', width: 24 },
-    { key: 'maneuvers', label: 'Manöver', width: 82 },
+    { key: 'ratings', label: 'Bewertung', width: 82 },
   ];
 
   const drawCourseStatsHeader = () => {
@@ -399,20 +415,20 @@ export const createCoursePDFDoc = (
       name: row.name,
       flights: flightsText,
       flightTime: formatTotalMinutes(row.totalFlightMinutes),
-      maneuvers: row.maneuvers,
+      ratings: row.ratings,
     };
 
-    const maneuversColumn = courseStatsColumns.find((column) => column.key === 'maneuvers');
-    const maxManeuverWidth = (maneuversColumn?.width ?? 80) - 2;
-    const splitRaw = doc.splitTextToSize(rowValues.maneuvers, maxManeuverWidth) as string | string[];
-    const maneuverLines = Array.isArray(splitRaw) ? splitRaw : [splitRaw];
-    const maneuverLineHeight = 3.2;
-    const rowHeight = Math.max(tableRowHeight, maneuverLines.length * maneuverLineHeight + 2.2);
+    const ratingsColumn = courseStatsColumns.find((column) => column.key === 'ratings');
+    const maxRatingWidth = (ratingsColumn?.width ?? 80) - 2;
+    const splitRaw = doc.splitTextToSize(rowValues.ratings, maxRatingWidth) as string | string[];
+    const ratingLines = Array.isArray(splitRaw) ? splitRaw : [splitRaw];
+    const ratingLineHeight = 3.2;
+    const rowHeight = Math.max(tableRowHeight, ratingLines.length * ratingLineHeight + 2.2);
 
     return {
       rowValues,
-      maneuverLines,
-      maneuverLineHeight,
+      ratingLines,
+      ratingLineHeight,
       rowHeight,
     };
   };
@@ -427,8 +443,8 @@ export const createCoursePDFDoc = (
     courseStatsColumns.forEach((column) => {
       doc.rect(x, y, column.width, rowMeta.rowHeight, 'S');
 
-      if (column.key === 'maneuvers') {
-        doc.text(rowMeta.maneuverLines, x + 1, y + 3.4);
+      if (column.key === 'ratings') {
+        doc.text(rowMeta.ratingLines, x + 1, y + 3.4);
       } else {
         const text = fitCellText(doc, rowMeta.rowValues[column.key] ?? '-', column.width - 2);
         doc.text(text, x + 1, y + 3.7);

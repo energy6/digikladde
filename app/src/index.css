@@ -52,3 +52,64 @@ a {
 .course-form-compact .ant-form-item-label {
   padding-bottom: 2px;
 }
+
+.flight-detail-label-action,
+.flight-detail-label-action.ant-space {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+}
+
+.ant-form-item-label > label:has(.flight-detail-label-action) {
+  width: 100%;
+}
+
+.remarks-grid-form-item .ant-form-item-control-input-content {
+  width: 100%;
+}
+
+.remarks-rating-grid {
+  display: grid;
+  grid-template-columns: minmax(82px, max-content) minmax(0, 1fr);
+  column-gap: 12px;
+  row-gap: 6px;
+  width: 100%;
+  align-items: center;
+}
+
+.remarks-rating-label {
+  justify-self: end;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.remarks-rating-grid .ant-slider {
+  margin: 4px;
+}
+
+.maneuver-dropdown-trigger {
+  display: flex;
+  width: 100%;
+  min-height: 32px;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 11px;
+  color: rgba(0, 0, 0, 0.88);
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.maneuver-dropdown-trigger:hover,
+.maneuver-dropdown-trigger[aria-expanded="true"] {
+  border-color: #4096ff;
+}
+
+.maneuver-dropdown-trigger:focus-visible {
+  border-color: #4096ff;
+  outline: 0;
+  box-shadow: 0 0 0 2px rgba(5, 145, 255, 0.1);
+}

@@ -21,6 +21,7 @@ type StudentPayload = {
   color?: string;
   totalFlights?: number;
   flightSchool?: string;
+  lastRatings?: Student['lastRatings'];
   updatedAt?: string;
   updatedByDeviceId?: string;
 };
@@ -30,6 +31,7 @@ type FlightPayload = {
   studentSyncId?: string;
   studentId?: number;
   maneuvers?: string[];
+  ratings?: Flight['ratings'];
   remarks?: string[];
   details?: Flight['details'];
   startTime?: string;
@@ -107,6 +109,7 @@ const applyStudentUpsert = async (envelope: RelaySyncEnvelope): Promise<void> =>
       color: payload.color,
       totalFlights: payload.totalFlights,
       flightSchool: sanitizeFlightSchoolName(payload.flightSchool),
+      lastRatings: payload.lastRatings,
     };
 
     const id = Number(await db.students.add(created));
@@ -120,6 +123,7 @@ const applyStudentUpsert = async (envelope: RelaySyncEnvelope): Promise<void> =>
       color: payload.color ?? existingStudent.color,
       totalFlights: payload.totalFlights ?? existingStudent.totalFlights,
       flightSchool: sanitizeFlightSchoolName(payload.flightSchool ?? existingStudent.flightSchool),
+      lastRatings: payload.lastRatings ?? existingStudent.lastRatings,
     };
 
     await db.students.update(existingStudent.id, updates);
@@ -200,6 +204,7 @@ const applyFlightUpsert = async (envelope: RelaySyncEnvelope): Promise<void> => 
       courseId: course.id,
       studentId: resolvedStudentId,
       maneuvers: [...(payload.maneuvers ?? [])],
+      ratings: payload.ratings,
       remarks: payload.remarks ? [...payload.remarks] : undefined,
       details: payload.details,
       startTime: payload.startTime,
@@ -219,6 +224,7 @@ const applyFlightUpsert = async (envelope: RelaySyncEnvelope): Promise<void> => 
     courseId: course.id,
     studentId: resolvedStudentId ?? existing.studentId,
     maneuvers: payload.maneuvers ? [...payload.maneuvers] : existing.maneuvers,
+    ratings: payload.ratings ?? existing.ratings,
     remarks: payload.remarks ? [...payload.remarks] : existing.remarks,
     details: payload.details ?? existing.details,
     startTime: payload.startTime ?? existing.startTime,

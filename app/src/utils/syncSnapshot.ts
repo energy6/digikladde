@@ -45,6 +45,7 @@ const ensureStudentSnapshotSyncIds = async (
       color: student.color,
       totalFlights: student.totalFlights ?? 0,
       flightSchool: sanitizeFlightSchoolName(student.flightSchool ?? course.flightSchool),
+      lastRatings: student.lastRatings,
     };
 
     if (!student.syncId || !student.updatedAt || !student.updatedByDeviceId) {
@@ -92,6 +93,7 @@ const ensureFlightsSyncIds = async (
       updatedAt: flight.updatedAt ?? now,
       updatedByDeviceId: flight.updatedByDeviceId ?? deviceId,
       maneuvers: [...(flight.maneuvers ?? [])],
+      ratings: flight.ratings,
       remarks: flight.remarks ? [...flight.remarks] : undefined,
       details: flight.details,
       startTime: flight.startTime,
@@ -158,6 +160,7 @@ const upsertStudentBySyncId = async (
       color: snapshotStudent.color,
       totalFlights: snapshotStudent.totalFlights,
       flightSchool: incomingFlightSchool,
+      lastRatings: snapshotStudent.lastRatings,
     };
 
     const id = Number(await db.students.add(insert));
@@ -176,6 +179,7 @@ const upsertStudentBySyncId = async (
     color: snapshotStudent.color,
     totalFlights: snapshotStudent.totalFlights,
     flightSchool: incomingFlightSchool,
+    lastRatings: snapshotStudent.lastRatings ?? existing.lastRatings,
   };
 
   if (existing.id) {
@@ -212,6 +216,7 @@ export const importCourseSnapshot = async (
         color: resolved?.color ?? student.color,
         totalFlights: resolved?.totalFlights ?? student.totalFlights,
         flightSchool: sanitizeFlightSchoolName(resolved?.flightSchool ?? student.flightSchool),
+        lastRatings: resolved?.lastRatings ?? student.lastRatings,
       };
     });
 
@@ -269,6 +274,7 @@ export const importCourseSnapshot = async (
           courseId: localCourseId,
           studentId: resolvedStudent.id,
           maneuvers: [...(incomingFlight.maneuvers ?? [])],
+          ratings: incomingFlight.ratings,
           remarks: incomingFlight.remarks ? [...incomingFlight.remarks] : undefined,
           details: incomingFlight.details,
           startTime: incomingFlight.startTime,
@@ -293,6 +299,7 @@ export const importCourseSnapshot = async (
         courseId: localCourseId,
         studentId: resolvedStudent.id,
         maneuvers: [...(incomingFlight.maneuvers ?? [])],
+        ratings: incomingFlight.ratings,
         remarks: incomingFlight.remarks ? [...incomingFlight.remarks] : undefined,
         details: incomingFlight.details,
         startTime: incomingFlight.startTime,
