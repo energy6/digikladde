@@ -7,9 +7,11 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useFlightSchool } from '../context/FlightSchoolContext';
 import { useRelaySync } from '../context/RelaySyncContext';
 import { db } from '../db/database';
-import type { Course, Flight, FlightDetails, Student } from '../models/types';
+import type { Course, Flight, FlightDetails, ManeuverRatings, Student } from '../models/types';
+import { getFlightDetailOptions, rememberFlightDetails } from '../utils/flightDetailHistory';
 import { ALL_FLIGHT_SCHOOLS, extractFlightSchools, sanitizeFlightSchoolName } from '../utils/flightSchool';
 import { createId } from '../utils/idGenerator';
+import { buildRatings, hasSameRatings, normalizeRating } from '../utils/maneuverRatings';
 import CourseHeader from './CourseHeader';
 import CourseSyncFooter from './CourseSyncFooter';
 import { ActiveStudentListItem, IdleStudentListItem, PendingStudentListItem } from './courseStudentList';
@@ -114,6 +116,9 @@ const CourseDetail = () => {
   const [existingRemarks, setExistingRemarks] = useState<string[]>([]);
   const [selectedRemarkManeuvers, setSelectedRemarkManeuvers] = useState<string[]>([]);
   const [initialRemarkManeuvers, setInitialRemarkManeuvers] = useState<string[]>([]);
+  const [selectedRemarkRatings, setSelectedRemarkRatings] = useState<ManeuverRatings>({});
+  const [initialRemarkRatings, setInitialRemarkRatings] = useState<ManeuverRatings>({});
+  const [selectedRemarkStudentLastRatings, setSelectedRemarkStudentLastRatings] = useState<ManeuverRatings>({});
   const [newRemark, setNewRemark] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [remarksReadOnly, setRemarksReadOnly] = useState(false);
@@ -247,6 +252,7 @@ const CourseDetail = () => {
               color: finalizedStudent.color,
               totalFlights: finalizedStudent.totalFlights,
               flightSchool: finalizedStudent.flightSchool,
+              lastRatings: finalizedStudent.lastRatings,
               updatedAt: finalizedStudent.updatedAt,
               updatedByDeviceId: finalizedStudent.updatedByDeviceId,
             },
@@ -434,6 +440,10 @@ const CourseDetail = () => {
     effectiveFlightSchool,
   ]), [allStudents, course, effectiveFlightSchool]);
 
+  const flightDetailOptions = useMemo(() => (
+    getFlightDetailOptions(effectiveFlightSchool, course?.flightDefaults)
+  ), [course?.flightDefaults, effectiveFlightSchool]);
+
   const availableExistingStudents = useMemo(() => {
     if (!course) return [];
     return allStudents
@@ -458,7 +468,8 @@ const CourseDetail = () => {
   const hasManeuverChanges = maneuversEnabled
     ? !hasSameManeuverSelection(selectedRemarkManeuvers, initialRemarkManeuvers)
     : false;
-  const canSaveRemarkChanges = newRemark.trim().length > 0 || hasManeuverChanges;
+  const hasRatingChanges = !hasSameRatings(selectedRemarkRatings, initialRemarkRatings, selectedRemarkManeuvers);
+  const canSaveRemarkChanges = newRemark.trim().length > 0 || hasManeuverChanges || hasRatingChanges;
 
   const resolveStudentSyncId = useCallback(async (studentId: number): Promise<string | undefined> => {
     const embeddedStudent = course?.students.find((student) => student.id === studentId);
@@ -495,6 +506,11 @@ const CourseDetail = () => {
         ));
 
         await db.courses.update(course.id, { students: nextStudents });
+        setCourse((currentCourse) => (
+          currentCourse && currentCourse.id === course.id
+            ? { ...currentCourse, students: nextStudents }
+            : currentCourse
+        ));
       }
     }
 
@@ -515,6 +531,7 @@ const CourseDetail = () => {
         color: student.color,
         totalFlights: student.totalFlights,
         flightSchool: student.flightSchool,
+        lastRatings: student.lastRatings,
         updatedAt: student.updatedAt,
         updatedByDeviceId: student.updatedByDeviceId,
       },
@@ -557,6 +574,7 @@ const CourseDetail = () => {
           color: normalizedStudent.color,
           totalFlights: normalizedStudent.totalFlights,
           flightSchool: normalizedStudent.flightSchool,
+          lastRatings: normalizedStudent.lastRatings,
           updatedAt: normalizedStudent.updatedAt,
           updatedByDeviceId: normalizedStudent.updatedByDeviceId,
         },
@@ -585,6 +603,7 @@ const CourseDetail = () => {
           color: createdStudent.color,
           totalFlights: createdStudent.totalFlights,
           flightSchool: createdStudent.flightSchool,
+          lastRatings: createdStudent.lastRatings,
           updatedAt: createdStudent.updatedAt,
           updatedByDeviceId: createdStudent.updatedByDeviceId,
         },
@@ -614,6 +633,7 @@ const CourseDetail = () => {
     };
     await db.flights.add(flight);
     await db.courses.update(courseId, { flightDefaults: flightDetails });
+    rememberFlightDetails(effectiveFlightSchool, flightDetails);
 
     await logCourseDelta({
       courseId,
@@ -641,6 +661,14 @@ const CourseDetail = () => {
     setFlightDetails({});
     await refresh();
   };
+
+  const handleSwapStartAndLandTeachers = useCallback(() => {
+    setFlightDetails((currentDetails) => ({
+      ...currentDetails,
+      startTeacher: currentDetails.landTeacher,
+      landTeacher: currentDetails.startTeacher,
+    }));
+  }, []);
 
   const handleEditStudent = async () => {
     if (!editStudent || !editStudent.id || !course || !id) return;
@@ -681,6 +709,7 @@ const CourseDetail = () => {
         color: editStudent.color,
         totalFlights: editStudent.totalFlights,
         flightSchool: sanitizeFlightSchoolName(editStudent.flightSchool),
+        lastRatings: editStudent.lastRatings,
         updatedAt: now,
         updatedByDeviceId: deviceId,
       },
@@ -906,12 +935,16 @@ const CourseDetail = () => {
 
   const openRemarksModal = (flight: Flight, student: Student) => {
     if (!flight.id) return;
+    const initialRatings = buildRatings(flight.maneuvers ?? [], flight.ratings, student.lastRatings);
     setRemarksReadOnly(false);
     setRemarksContextText('');
     setSelectedRemarkFlight({ flightId: flight.id, studentName: student.name });
     setExistingRemarks(flight.remarks ?? []);
     setSelectedRemarkManeuvers(flight.maneuvers ?? []);
     setInitialRemarkManeuvers(flight.maneuvers ?? []);
+    setSelectedRemarkRatings(initialRatings);
+    setInitialRemarkRatings(initialRatings);
+    setSelectedRemarkStudentLastRatings(student.lastRatings ?? {});
     setNewRemark('');
     setRemarksModalVisible(true);
   };
@@ -928,6 +961,9 @@ const CourseDetail = () => {
     setNewRemark('');
     setSelectedRemarkManeuvers([]);
     setInitialRemarkManeuvers([]);
+    setSelectedRemarkRatings({});
+    setInitialRemarkRatings({});
+    setSelectedRemarkStudentLastRatings(student.lastRatings ?? {});
     setSelectedRemarkFlight(null);
 
     if (!latestFlight) {
@@ -938,10 +974,13 @@ const CourseDetail = () => {
     }
 
     const flightTime = new Date(latestFlight.startTime).toLocaleString();
+    const latestRatings = buildRatings(latestFlight.maneuvers ?? [], latestFlight.ratings, student.lastRatings);
     setRemarksContextText(`Letzter Flug: ${flightTime}`);
     setExistingRemarks(latestFlight.remarks ?? []);
     setSelectedRemarkManeuvers(latestFlight.maneuvers ?? []);
     setInitialRemarkManeuvers(latestFlight.maneuvers ?? []);
+    setSelectedRemarkRatings(latestRatings);
+    setInitialRemarkRatings(latestRatings);
     setRemarksModalVisible(true);
   };
 
@@ -956,9 +995,26 @@ const CourseDetail = () => {
     setExistingRemarks([]);
     setSelectedRemarkManeuvers([]);
     setInitialRemarkManeuvers([]);
+    setSelectedRemarkRatings({});
+    setInitialRemarkRatings({});
+    setSelectedRemarkStudentLastRatings({});
     setNewRemark('');
     setRemarksReadOnly(false);
     setRemarksContextText('');
+  };
+
+  const handleSelectedRemarkManeuversChange = (values: string[]) => {
+    setSelectedRemarkManeuvers(values);
+    setSelectedRemarkRatings((currentRatings) => (
+      buildRatings(values, currentRatings, selectedRemarkStudentLastRatings)
+    ));
+  };
+
+  const handleRemarkRatingChange = (ratingKey: string, value: number) => {
+    setSelectedRemarkRatings((currentRatings) => ({
+      ...currentRatings,
+      [ratingKey]: normalizeRating(value),
+    }));
   };
 
   const handleSaveRemark = async () => {
@@ -975,8 +1031,10 @@ const CourseDetail = () => {
     const maneuversChanged = maneuversEnabled
       ? !hasSameManeuverSelection(updatedManeuvers, flight.maneuvers ?? [])
       : false;
+    const updatedRatings = buildRatings(updatedManeuvers, selectedRemarkRatings);
+    const ratingsChanged = !hasSameRatings(updatedRatings, flight.ratings ?? {}, updatedManeuvers);
 
-    if (!hasNewRemark && !maneuversChanged) {
+    if (!hasNewRemark && !maneuversChanged && !ratingsChanged) {
       closeRemarksModal();
       return;
     }
@@ -986,9 +1044,46 @@ const CourseDetail = () => {
     await db.flights.update(selectedRemarkFlight.flightId, {
       remarks: updatedRemarks,
       maneuvers: updatedManeuvers,
+      ratings: updatedRatings,
       updatedAt: now,
       updatedByDeviceId: deviceId,
     });
+
+    const student = await db.students.get(flight.studentId);
+    let updatedStudent: Student | undefined;
+    if (student?.id) {
+      const nextLastRatings = {
+        ...(student.lastRatings ?? {}),
+        ...updatedRatings,
+      };
+      await db.students.update(student.id, {
+        lastRatings: nextLastRatings,
+        updatedAt: now,
+        updatedByDeviceId: deviceId,
+      });
+
+      updatedStudent = {
+        ...student,
+        lastRatings: nextLastRatings,
+        updatedAt: now,
+        updatedByDeviceId: deviceId,
+      };
+
+      if (course?.id) {
+        const nextStudents = course.students.map((courseStudent) => (
+          courseStudent.id === student.id
+            ? {
+                ...courseStudent,
+                lastRatings: nextLastRatings,
+                updatedAt: now,
+                updatedByDeviceId: deviceId,
+              }
+            : courseStudent
+        ));
+
+        await db.courses.update(course.id, { students: nextStudents });
+      }
+    }
 
     setFlights((currentFlights) => currentFlights.map((currentFlight) => (
       currentFlight.id === selectedRemarkFlight.flightId
@@ -996,6 +1091,7 @@ const CourseDetail = () => {
             ...currentFlight,
             remarks: updatedRemarks,
             maneuvers: updatedManeuvers,
+            ratings: updatedRatings,
             updatedAt: now,
             updatedByDeviceId: deviceId,
           }
@@ -1013,6 +1109,7 @@ const CourseDetail = () => {
           studentSyncId,
           studentId: flight.studentId,
           maneuvers: updatedManeuvers,
+          ratings: updatedRatings,
           remarks: updatedRemarks,
           details: flight.details,
           startTime: flight.startTime,
@@ -1024,6 +1121,10 @@ const CourseDetail = () => {
           updatedByDeviceId: deviceId,
         },
       });
+
+      if (updatedStudent) {
+        await logStudentUpsertDelta(Number(id), updatedStudent);
+      }
     }
     closeRemarksModal();
     await refresh();
@@ -1264,12 +1365,14 @@ const CourseDetail = () => {
         course={course}
         selectedFlightStudent={selectedFlightStudent}
         flightDetails={flightDetails}
+        flightDetailOptions={flightDetailOptions}
         selectedManeuvers={selectedManeuvers}
         maneuversEnabled={maneuversEnabled}
         startLeiterOptions={startLeiterOptions}
         onCancel={() => setStartModalVisible(false)}
         onOk={handleStartFlight}
         onFlightDetailsChange={setFlightDetails}
+        onSwapStartAndLandTeachers={handleSwapStartAndLandTeachers}
         onSelectedManeuversChange={setSelectedManeuvers}
       />
 
@@ -1281,6 +1384,8 @@ const CourseDetail = () => {
         existingRemarks={existingRemarks}
         newRemark={newRemark}
         selectedManeuvers={selectedRemarkManeuvers}
+        ratings={selectedRemarkRatings}
+        lastRatings={selectedRemarkStudentLastRatings}
         maneuversEnabled={Boolean(maneuversEnabled)}
         canSave={canSaveRemarkChanges}
         isListening={isListening}
@@ -1288,7 +1393,8 @@ const CourseDetail = () => {
         onToggleDictation={handleToggleDictation}
         onSave={handleSaveRemark}
         onNewRemarkChange={setNewRemark}
-        onSelectedManeuversChange={setSelectedRemarkManeuvers}
+        onSelectedManeuversChange={handleSelectedRemarkManeuversChange}
+        onRatingChange={handleRemarkRatingChange}
       />
     </div>
   );

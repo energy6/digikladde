@@ -6,6 +6,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { db } from '../db/database';
 import type { Course, Flight, FlightDetails } from '../models/types';
 import { dateFormatter, durationFormatter, timeFormatter } from '../utils/DatetimeFormatter';
+import { formatRatingLabels } from '../utils/maneuverRatings';
 import { generatePDF } from '../utils/pdfExport';
 import CourseHeader from './CourseHeader';
 
@@ -31,6 +32,10 @@ const renderFlightDetails = (details?: FlightDetails) => {
     </div>
   );
 };
+
+const renderFlightRatings = (flight: Flight): string => (
+  formatRatingLabels(flight.maneuvers, flight.ratings)
+);
 
 const CourseEvaluation = () => {
   const { id } = useParams();
@@ -131,7 +136,7 @@ const CourseEvaluation = () => {
                                       &nbsp;- {flight.endTime ? timeFormatter.format(new Date(flight.endTime)) : 'laufend'}
                                       &nbsp;| {durationFormatter(Date.parse(flight.startTime), flight.endTime ? Date.parse(flight.endTime) : undefined)}
                                     </Text>
-                                    {flight.maneuvers && <Text>Manöver: {flight.maneuvers.join(', ')}</Text>}
+                                    <Text>{renderFlightRatings(flight)}</Text>
                                     {renderFlightDetails(flight.details)}
                                     {flight.remarks && <Text>{flight.remarks.map(r => (<div>{r}</div>))}</Text>}
                                   </Space>

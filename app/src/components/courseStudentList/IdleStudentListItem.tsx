@@ -2,7 +2,9 @@ import { EditOutlined } from '@ant-design/icons';
 import { faCircleExclamation, faPlaneDeparture } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { Button, Checkbox, List, Space } from 'antd';
+import { useRef } from 'react';
 import type { Student } from '../../models/types';
+import { isDoubleTap } from '../../utils/doubleTap';
 
 type IdleStudentListItemProps = {
   student: Student;
@@ -26,6 +28,7 @@ const IdleStudentListItem = ({
   onStartFlight,
 }: IdleStudentListItemProps) => {
   const studentId = student.id;
+  const lastTapRef = useRef(0);
 
   return (
     <List.Item
@@ -36,6 +39,11 @@ const IdleStudentListItem = ({
       }}
       onDoubleClick={() => {
         if (!deleteMode) {
+          void onOpenLastFlightRemarks(student);
+        }
+      }}
+      onPointerUp={(event) => {
+        if (!deleteMode && isDoubleTap(event, lastTapRef)) {
           void onOpenLastFlightRemarks(student);
         }
       }}
