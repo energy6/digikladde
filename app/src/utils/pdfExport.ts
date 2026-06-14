@@ -1,7 +1,8 @@
 import { jsPDF as jsPDFNamed } from 'jspdf';
-import { landingRatingKey, startRatingKey, type Course, type CourseType, type Flight, type ManeuverRatings, type Student } from '../models/types';
+import type { Course, CourseType, Flight, Student } from '../models/types';
 import { durationFormatter } from './DatetimeFormatter';
 import { UNKNOWN_FLIGHT_SCHOOL } from './flightSchool';
+import { formatRatingLabels } from './maneuverRatings';
 
 type JsPDFInstance = InstanceType<typeof jsPDFNamed>;
 type StudentDayGroup = {
@@ -110,7 +111,7 @@ const getFlightCellValue = (flight: Flight, rowNo: number, courseType: CourseTyp
     startTime: timeFormatter.format(startDate),
     landingTime: endDate ? timeFormatter.format(endDate) : '-',
     duration: durationFormatter(startDate.getTime(), endDate ? endDate.getTime() : undefined),
-    maneuvers: buildRatingLabels(flight.maneuvers, flight.ratings),
+    maneuvers: formatRatingLabels(flight.maneuvers, flight.ratings),
     terrainTeacher: `${terrain} / ${teacher}`,
     startLeader: flight.details?.startLeiter ?? '-',
     startInfo: `${startPlace} / ${startTeacher}`,
@@ -120,7 +121,7 @@ const getFlightCellValue = (flight: Flight, rowNo: number, courseType: CourseTyp
   if (courseType === 'Grundkurs') {
     values.startInfo = '-';
     values.landInfo = '-';
-    values.maneuvers = buildRatingLabels([], flight.ratings);
+    values.maneuvers = formatRatingLabels([], flight.ratings);
   }
 
   if (courseType === 'Windenkurs') {
@@ -205,17 +206,6 @@ const formatTotalMinutes = (totalMinutes: number) => {
   return `${hours}:${pad2(minutes)}`;
 };
 
-const formatRatingLabel = (label: string, ratings?: ManeuverRatings): string => {
-  const rating = ratings?.[label];
-  return typeof rating === 'number' ? `${label} (${rating})` : label;
-};
-
-const buildRatingLabels = (maneuvers: string[], ratings?: ManeuverRatings): string => (
-  [startRatingKey, ...maneuvers, landingRatingKey]
-    .map((label) => formatRatingLabel(label, ratings))
-    .join(', ')
-);
-
 export const createCoursePDFDoc = (
   course: Course,
   flights: Flight[],
@@ -264,7 +254,7 @@ export const createCoursePDFDoc = (
       flights: studentFlights.length,
       totalFlightsAfterCourse: student.totalFlights,
       totalFlightMinutes,
-      ratings: buildRatingLabels(summaryManeuvers, student.lastRatings),
+      ratings: formatRatingLabels(summaryManeuvers, student.lastRatings),
     };
   });
 
@@ -294,7 +284,7 @@ export const createCoursePDFDoc = (
       flights: studentFlights.length,
       totalFlightsAfterCourse: knownStudent?.totalFlights ?? studentFlights.length,
       totalFlightMinutes,
-      ratings: buildRatingLabels(summaryManeuvers, knownStudent?.lastRatings ?? latestRatings),
+      ratings: formatRatingLabels(summaryManeuvers, knownStudent?.lastRatings ?? latestRatings),
     });
   });
 

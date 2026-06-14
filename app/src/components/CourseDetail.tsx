@@ -7,10 +7,11 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useFlightSchool } from '../context/FlightSchoolContext';
 import { useRelaySync } from '../context/RelaySyncContext';
 import { db } from '../db/database';
-import { landingRatingKey, startRatingKey, type Course, type Flight, type FlightDetails, type ManeuverRatings, type Student } from '../models/types';
+import type { Course, Flight, FlightDetails, ManeuverRatings, Student } from '../models/types';
 import { getFlightDetailOptions, rememberFlightDetails } from '../utils/flightDetailHistory';
 import { ALL_FLIGHT_SCHOOLS, extractFlightSchools, sanitizeFlightSchoolName } from '../utils/flightSchool';
 import { createId } from '../utils/idGenerator';
+import { buildRatings, hasSameRatings, normalizeRating } from '../utils/maneuverRatings';
 import CourseHeader from './CourseHeader';
 import CourseSyncFooter from './CourseSyncFooter';
 import { ActiveStudentListItem, IdleStudentListItem, PendingStudentListItem } from './courseStudentList';
@@ -35,37 +36,6 @@ const hasSameManeuverSelection = (left: string[], right: string[]): boolean => {
 
   return sortedLeft.every((value, index) => value === sortedRight[index]);
 };
-
-const ratingKeysForManeuvers = (maneuverValues: string[]): string[] => [
-  startRatingKey,
-  ...maneuverValues,
-  landingRatingKey,
-];
-
-const normalizeRatingValue = (value: number | undefined): number => {
-  if (typeof value !== 'number' || Number.isNaN(value)) return 0;
-  return Math.min(10, Math.max(0, Math.round(value)));
-};
-
-const buildRatingsForManeuvers = (
-  maneuverValues: string[],
-  primaryRatings?: ManeuverRatings,
-  fallbackRatings?: ManeuverRatings,
-): ManeuverRatings => {
-  const nextRatings: ManeuverRatings = {};
-
-  ratingKeysForManeuvers(maneuverValues).forEach((ratingKey) => {
-    nextRatings[ratingKey] = normalizeRatingValue(primaryRatings?.[ratingKey] ?? fallbackRatings?.[ratingKey]);
-  });
-
-  return nextRatings;
-};
-
-const hasSameRatings = (left: ManeuverRatings, right: ManeuverRatings, maneuverValues: string[]): boolean => (
-  ratingKeysForManeuvers(maneuverValues).every((ratingKey) => (
-    normalizeRatingValue(left[ratingKey]) === normalizeRatingValue(right[ratingKey])
-  ))
-);
 
 type SpeechRecognitionAlternativeLike = {
   transcript: string;
@@ -965,7 +935,7 @@ const CourseDetail = () => {
 
   const openRemarksModal = (flight: Flight, student: Student) => {
     if (!flight.id) return;
-    const initialRatings = buildRatingsForManeuvers(flight.maneuvers ?? [], flight.ratings, student.lastRatings);
+    const initialRatings = buildRatings(flight.maneuvers ?? [], flight.ratings, student.lastRatings);
     setRemarksReadOnly(false);
     setRemarksContextText('');
     setSelectedRemarkFlight({ flightId: flight.id, studentName: student.name });
@@ -1004,7 +974,7 @@ const CourseDetail = () => {
     }
 
     const flightTime = new Date(latestFlight.startTime).toLocaleString();
-    const latestRatings = buildRatingsForManeuvers(latestFlight.maneuvers ?? [], latestFlight.ratings, student.lastRatings);
+    const latestRatings = buildRatings(latestFlight.maneuvers ?? [], latestFlight.ratings, student.lastRatings);
     setRemarksContextText(`Letzter Flug: ${flightTime}`);
     setExistingRemarks(latestFlight.remarks ?? []);
     setSelectedRemarkManeuvers(latestFlight.maneuvers ?? []);
@@ -1036,14 +1006,14 @@ const CourseDetail = () => {
   const handleSelectedRemarkManeuversChange = (values: string[]) => {
     setSelectedRemarkManeuvers(values);
     setSelectedRemarkRatings((currentRatings) => (
-      buildRatingsForManeuvers(values, currentRatings, selectedRemarkStudentLastRatings)
+      buildRatings(values, currentRatings, selectedRemarkStudentLastRatings)
     ));
   };
 
   const handleRemarkRatingChange = (ratingKey: string, value: number) => {
     setSelectedRemarkRatings((currentRatings) => ({
       ...currentRatings,
-      [ratingKey]: normalizeRatingValue(value),
+      [ratingKey]: normalizeRating(value),
     }));
   };
 
@@ -1061,7 +1031,7 @@ const CourseDetail = () => {
     const maneuversChanged = maneuversEnabled
       ? !hasSameManeuverSelection(updatedManeuvers, flight.maneuvers ?? [])
       : false;
-    const updatedRatings = buildRatingsForManeuvers(updatedManeuvers, selectedRemarkRatings);
+    const updatedRatings = buildRatings(updatedManeuvers, selectedRemarkRatings);
     const ratingsChanged = !hasSameRatings(updatedRatings, flight.ratings ?? {}, updatedManeuvers);
 
     if (!hasNewRemark && !maneuversChanged && !ratingsChanged) {

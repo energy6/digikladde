@@ -4,8 +4,9 @@ import { Button, Card, Collapse, List, Space, Typography } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { db } from '../db/database';
-import { landingRatingKey, startRatingKey, type Course, type Flight, type FlightDetails } from '../models/types';
+import type { Course, Flight, FlightDetails } from '../models/types';
 import { dateFormatter, durationFormatter, timeFormatter } from '../utils/DatetimeFormatter';
+import { formatRatingLabels } from '../utils/maneuverRatings';
 import { generatePDF } from '../utils/pdfExport';
 import CourseHeader from './CourseHeader';
 
@@ -32,15 +33,8 @@ const renderFlightDetails = (details?: FlightDetails) => {
   );
 };
 
-const formatFlightRating = (label: string, flight: Flight): string => {
-  const rating = flight.ratings?.[label];
-  return typeof rating === 'number' ? `${label} (${rating})` : label;
-};
-
 const renderFlightRatings = (flight: Flight): string => (
-  [startRatingKey, ...flight.maneuvers, landingRatingKey]
-    .map((label) => formatFlightRating(label, flight))
-    .join(', ')
+  formatRatingLabels(flight.maneuvers, flight.ratings)
 );
 
 const CourseEvaluation = () => {

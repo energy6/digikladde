@@ -1,6 +1,7 @@
 import { List } from "antd";
 import type { Flight, Student } from "../models/types";
 import { durationFormatter, timeFormatter } from "../utils/DatetimeFormatter";
+import { formatRatingLabel } from "../utils/maneuverRatings";
 
 interface StudentListItemProps {
   student: Student;
@@ -8,15 +9,10 @@ interface StudentListItemProps {
   nowTs: number;
 }
 
-const formatManeuver = (maneuver: string, student: Student): string => {
-  const rating = student.lastRatings?.[maneuver];
-  return typeof rating === 'number' ? `${maneuver} (${rating})` : maneuver;
-};
-
 const StudentListItem = ({student, flight, nowTs}: StudentListItemProps) => {
   const startTime = new Date(flight.startTime);
   const landingTime = flight.landingMarkedAt ? new Date(flight.landingMarkedAt) : null;
-  const maneuverText = flight.maneuvers.map((maneuver) => formatManeuver(maneuver, student)).join(', ');
+  const maneuverText = flight.maneuvers.map((maneuver) => formatRatingLabel(maneuver, student.lastRatings)).join(', ');
 
   return (
     <List.Item.Meta

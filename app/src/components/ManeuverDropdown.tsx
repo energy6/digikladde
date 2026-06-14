@@ -2,6 +2,7 @@ import { DownOutlined } from '@ant-design/icons';
 import { Checkbox, Popover, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 import { maneuvers, type ManeuverRatings } from '../models/types';
+import { formatRatingLabel } from '../utils/maneuverRatings';
 
 const { Text } = Typography;
 
@@ -11,15 +12,10 @@ type ManeuverDropdownProps = {
   onChange: (values: string[]) => void;
 };
 
-const formatManeuverLabel = (maneuver: string, lastRatings?: ManeuverRatings): string => {
-  const rating = lastRatings?.[maneuver];
-  return typeof rating === 'number' ? `${maneuver} (${rating})` : maneuver;
-};
-
 const ManeuverDropdown = ({ value, lastRatings, onChange }: ManeuverDropdownProps) => {
   const [open, setOpen] = useState(false);
   const label = useMemo(() => (
-    value.length ? value.map((maneuver) => formatManeuverLabel(maneuver, lastRatings)).join(', ') : 'Keine Manöver ausgewählt'
+    value.length ? value.map((maneuver) => formatRatingLabel(maneuver, lastRatings)).join(', ') : 'Keine Manöver ausgewählt'
   ), [lastRatings, value]);
 
   return (
@@ -36,7 +32,7 @@ const ManeuverDropdown = ({ value, lastRatings, onChange }: ManeuverDropdownProp
         >
           {maneuvers.map((maneuver) => (
             <Checkbox key={maneuver} value={maneuver}>
-              {formatManeuverLabel(maneuver, lastRatings)}
+              {formatRatingLabel(maneuver, lastRatings)}
             </Checkbox>
           ))}
         </Checkbox.Group>

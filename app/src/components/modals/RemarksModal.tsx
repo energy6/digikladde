@@ -2,7 +2,8 @@ import { faCheck, faMicrophone } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { Button, Form, Input, Modal, Slider, Space, Typography } from 'antd';
 import { Fragment } from 'react';
-import { landingRatingKey, startRatingKey, type ManeuverRatings } from '../../models/types';
+import { startRatingKey, type ManeuverRatings } from '../../models/types';
+import { formatRatingLabel, getRatingKeys } from '../../utils/maneuverRatings';
 import ManeuverDropdown from '../ManeuverDropdown';
 
 const { Text } = Typography;
@@ -54,12 +55,8 @@ const RemarksModal = ({
   onRatingChange,
 }: RemarksModalProps) => {
   const ratingKeys = selectedRemarkFlight || ratings[startRatingKey] !== undefined || selectedManeuvers.length
-    ? [startRatingKey, ...selectedManeuvers, landingRatingKey]
+    ? getRatingKeys(selectedManeuvers)
     : [];
-  const formatRatingLabel = (ratingKey: string): string => {
-    const lastRating = lastRatings[ratingKey];
-    return typeof lastRating === 'number' ? `${ratingKey} (${lastRating})` : ratingKey;
-  };
 
   return (
     <Modal
@@ -128,7 +125,7 @@ const RemarksModal = ({
             {ratingKeys.map((ratingKey) => (
               <Fragment key={ratingKey}>
                 <Text className="remarks-rating-label">
-                  {formatRatingLabel(ratingKey)}
+                  {formatRatingLabel(ratingKey, lastRatings)}
                 </Text>
                 <Slider
                   min={0}
