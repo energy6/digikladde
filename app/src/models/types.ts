@@ -38,6 +38,7 @@ export interface Student extends SyncMetadata {
   totalFlights: number;
   flightSchool: string;
   lastRatings?: ManeuverRatings;
+  photoDataUrl?: string;
 }
 
 export interface FlightDetails {
@@ -128,6 +129,7 @@ export interface SharedStudentSnapshot extends SyncMetadata {
   totalFlights: number;
   flightSchool: string;
   lastRatings?: ManeuverRatings;
+  photoDataUrl?: string;
 }
 
 export interface SharedFlightSnapshot extends SyncMetadata {

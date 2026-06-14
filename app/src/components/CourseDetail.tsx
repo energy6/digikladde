@@ -253,6 +253,7 @@ const CourseDetail = () => {
               totalFlights: finalizedStudent.totalFlights,
               flightSchool: finalizedStudent.flightSchool,
               lastRatings: finalizedStudent.lastRatings,
+              photoDataUrl: finalizedStudent.photoDataUrl ?? null,
               updatedAt: finalizedStudent.updatedAt,
               updatedByDeviceId: finalizedStudent.updatedByDeviceId,
             },
@@ -532,6 +533,7 @@ const CourseDetail = () => {
         totalFlights: student.totalFlights,
         flightSchool: student.flightSchool,
         lastRatings: student.lastRatings,
+        photoDataUrl: student.photoDataUrl ?? null,
         updatedAt: student.updatedAt,
         updatedByDeviceId: student.updatedByDeviceId,
       },
@@ -575,6 +577,7 @@ const CourseDetail = () => {
           totalFlights: normalizedStudent.totalFlights,
           flightSchool: normalizedStudent.flightSchool,
           lastRatings: normalizedStudent.lastRatings,
+          photoDataUrl: normalizedStudent.photoDataUrl ?? null,
           updatedAt: normalizedStudent.updatedAt,
           updatedByDeviceId: normalizedStudent.updatedByDeviceId,
         },
@@ -604,6 +607,7 @@ const CourseDetail = () => {
           totalFlights: createdStudent.totalFlights,
           flightSchool: createdStudent.flightSchool,
           lastRatings: createdStudent.lastRatings,
+          photoDataUrl: createdStudent.photoDataUrl ?? null,
           updatedAt: createdStudent.updatedAt,
           updatedByDeviceId: createdStudent.updatedByDeviceId,
         },
@@ -684,6 +688,7 @@ const CourseDetail = () => {
       color: editStudent.color,
       totalFlights: editStudent.totalFlights,
       flightSchool: sanitizeFlightSchoolName(editStudent.flightSchool),
+      photoDataUrl: editStudent.photoDataUrl,
     });
     const updatedStudents = course.students.map((s) =>
       s.id === editStudent.id
@@ -710,6 +715,7 @@ const CourseDetail = () => {
         totalFlights: editStudent.totalFlights,
         flightSchool: sanitizeFlightSchoolName(editStudent.flightSchool),
         lastRatings: editStudent.lastRatings,
+        photoDataUrl: editStudent.photoDataUrl ?? null,
         updatedAt: now,
         updatedByDeviceId: deviceId,
       },
@@ -1213,7 +1219,7 @@ const CourseDetail = () => {
           extra={(
             <Space orientation="horizontal" size="small" align="center">
               <Button
-                key="add"
+                key="sort"
                 type={deleteMode ? 'primary' : 'default'}
                 icon={<FontAwesomeIcon icon={ sortOrder === 'asc' ? faSortDown : faSortUp} />}
                 onClick={() => setSortOrder((current) => (current === 'asc' ? 'desc' : 'asc'))}

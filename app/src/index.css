@@ -4,6 +4,40 @@ body,
   height: 100%;
 }
 
+:root {
+  --student-avatar-bg: #0a2239;
+  --student-avatar-text: #ffffff;
+  --student-flight-avatar-border: rgba(255, 255, 255, 0.72);
+  --student-camera-preview-bg: #0b0f14;
+  --student-required-marker: #ff4d4f;
+  --student-remarks-indicator: #d48806;
+  --student-idle-delete-selected-bg: #fff7e6;
+  --student-active-bg: #1f5f3a;
+  --student-pending-bg: #1765ad;
+  --student-flight-title: #ffffff;
+  --student-flight-description: #deeeff;
+  --student-photo-actions-bg: rgba(255, 255, 255, 0.88);
+  --student-photo-actions-shadow: rgba(5, 20, 35, 0.24);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --student-avatar-bg: #d6e4ff;
+    --student-avatar-text: #0f1f33;
+    --student-flight-avatar-border: rgba(255, 255, 255, 0.88);
+    --student-camera-preview-bg: #05070a;
+    --student-required-marker: #ff7875;
+    --student-remarks-indicator: #ffc53d;
+    --student-idle-delete-selected-bg: rgba(250, 173, 20, 0.18);
+    --student-active-bg: #2f7d4f;
+    --student-pending-bg: #1f6fb8;
+    --student-flight-title: #ffffff;
+    --student-flight-description: #e6f4ff;
+    --student-photo-actions-bg: rgba(20, 24, 31, 0.86);
+    --student-photo-actions-shadow: rgba(0, 0, 0, 0.42);
+  }
+}
+
 body {
   margin: 0;
   font-family: Inter, system-ui, sans-serif;
@@ -112,4 +146,161 @@ a {
   border-color: #4096ff;
   outline: 0;
   box-shadow: 0 0 0 2px rgba(5, 145, 255, 0.1);
+}
+
+.student-photo-avatar,
+.student-list-avatar,
+.student-flight-avatar {
+  color: var(--student-avatar-text);
+  background: var(--student-avatar-bg);
+}
+
+.student-photo-avatar {
+  flex: 0 0 auto;
+}
+
+.student-form-header {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.student-photo-field {
+  flex: 0 0 104px;
+  margin-bottom: 8px;
+}
+
+.student-photo-frame {
+  position: relative;
+  width: 72px;
+}
+
+.student-photo-actions {
+  position: absolute;
+  right: -6px;
+  bottom: -4px;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--student-photo-actions-bg);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px var(--student-photo-actions-shadow);
+}
+
+.student-photo-actions .ant-btn-sm {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+}
+
+.student-form-main-fields {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.student-form-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  flex-wrap: nowrap;
+}
+
+.student-form-item {
+  flex: 1 1 0;
+  min-width: 0;
+  margin-bottom: 8px;
+}
+
+.student-flight-count-field {
+  flex: 0 0 128px;
+}
+
+.student-flight-school-field {
+  flex: 1 1 auto;
+}
+
+@media (max-width: 480px) {
+  .student-form-header,
+  .student-form-row {
+    gap: 8px;
+  }
+
+  .student-photo-field {
+    flex-basis: 88px;
+  }
+
+  .student-flight-count-field {
+    flex: 0 0 96px;
+  }
+
+  .student-flight-school-field {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+}
+
+.student-flight-avatar {
+  border: 2px solid var(--student-flight-avatar-border);
+}
+
+.student-camera-preview {
+  overflow: hidden;
+  background: var(--student-camera-preview-bg);
+  border-radius: 8px;
+}
+
+.student-camera-video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+}
+
+.student-required-marker {
+  color: var(--student-required-marker);
+}
+
+.student-idle-item {
+  padding-block: 6px;
+}
+
+.student-idle-delete-item {
+  padding-block: 6px;
+  padding-inline: 8px;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.student-idle-delete-item-selected {
+  background: var(--student-idle-delete-selected-bg);
+}
+
+.student-active-item,
+.student-pending-item {
+  padding-block: 6px;
+  padding-inline: 12px;
+  margin-bottom: 6px;
+  border-radius: 8px;
+}
+
+.student-active-item {
+  background: var(--student-active-bg);
+}
+
+.student-pending-item {
+  background: var(--student-pending-bg);
+}
+
+.student-remarks-indicator {
+  margin-left: 8px;
+  color: var(--student-remarks-indicator);
+}
+
+.student-flight-title {
+  color: var(--student-flight-title);
+  font-weight: 600;
+}
+
+.student-flight-description {
+  color: var(--student-flight-description);
 }

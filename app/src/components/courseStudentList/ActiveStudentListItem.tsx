@@ -34,13 +34,7 @@ const ActiveStudentListItem = ({
           onOpenRemarks(flight, student);
         }
       }}
-      style={{
-        background: '#1f5f3a',
-        borderRadius: 8,
-        paddingInline: 12,
-        paddingBlock: 6,
-        marginBottom: 6,
-      }}
+      className="student-active-item"
       actions={[
         <Space orientation="horizontal" size="small" align="center">
           <Popconfirm
