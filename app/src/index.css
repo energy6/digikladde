@@ -155,6 +155,21 @@ a {
   background: var(--student-avatar-bg);
 }
 
+.student-avatar-preview-button {
+  display: inline-flex;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  cursor: zoom-in;
+}
+
+.student-avatar-preview-button:focus-visible {
+  outline: 2px solid #4096ff;
+  outline-offset: 2px;
+}
+
 .student-photo-avatar {
   flex: 0 0 auto;
 }
@@ -254,6 +269,14 @@ a {
   width: 100%;
   aspect-ratio: 1 / 1;
   object-fit: cover;
+}
+
+.student-photo-preview-image {
+  display: block;
+  width: 100%;
+  max-height: min(72vh, 720px);
+  object-fit: contain;
+  border-radius: 8px;
 }
 
 .student-required-marker {

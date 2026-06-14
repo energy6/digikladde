@@ -1,4 +1,5 @@
-import { Avatar } from 'antd';
+import { Avatar, Modal } from 'antd';
+import { useState } from 'react';
 
 type StudentAvatarProps = {
   name: string;
@@ -17,10 +18,46 @@ const getStudentInitials = (name: string): string => {
     .join('');
 };
 
-const StudentAvatar = ({ name, photoDataUrl, size, className }: StudentAvatarProps) => (
-  <Avatar size={size} src={photoDataUrl} className={className}>
-    {getStudentInitials(name)}
-  </Avatar>
-);
+const StudentAvatar = ({ name, photoDataUrl, size, className }: StudentAvatarProps) => {
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const avatar = (
+    <Avatar size={size} src={photoDataUrl} className={className}>
+      {getStudentInitials(name)}
+    </Avatar>
+  );
+
+  if (!photoDataUrl) {
+    return avatar;
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        className="student-avatar-preview-button"
+        aria-label={`Foto von ${name || 'Schüler'} vergrößern`}
+        onPointerUp={(event) => {
+          event.stopPropagation();
+        }}
+        onClick={(event) => {
+          event.stopPropagation();
+          setPreviewOpen(true);
+        }}
+      >
+        {avatar}
+      </button>
+      <Modal
+        title={name || 'Schülerfoto'}
+        open={previewOpen}
+        footer={null}
+        centered
+        destroyOnHidden
+        onCancel={() => setPreviewOpen(false)}
+      >
+        <img src={photoDataUrl} alt={name || 'Schülerfoto'} className="student-photo-preview-image" />
+      </Modal>
+    </>
+  );
+};
 
 export default StudentAvatar;
