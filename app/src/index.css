@@ -184,6 +184,49 @@ a {
   color: var(--remarks-rating-handle-value-disabled);
 }
 
+.flight-edit-form .ant-form-item {
+  margin-bottom: 8px;
+}
+
+.flight-edit-form .ant-form-item-label {
+  padding-bottom: 2px;
+}
+
+.flight-edit-form .ant-form-item-label > label {
+  height: 20px;
+}
+
+.flight-edit-form .flight-edit-rating-grid {
+  margin-bottom: 8px;
+}
+
+.flight-edit-form .flight-edit-date-input {
+  width: 58%;
+}
+
+.flight-edit-form .flight-edit-time-input {
+  width: 42%;
+}
+
+.flight-edit-form .flight-edit-picker-input.ant-input {
+  min-width: 0;
+  padding-inline: 6px 2px;
+}
+
+.flight-edit-form .flight-edit-picker-input::-webkit-calendar-picker-indicator {
+  width: 14px;
+  height: 14px;
+  margin-inline-start: 2px;
+  margin-inline-end: 0;
+  padding: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .flight-edit-form .flight-edit-picker-input.ant-input {
+    color-scheme: dark;
+  }
+}
+
 .maneuver-dropdown-trigger {
   display: flex;
   width: 100%;

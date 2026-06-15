@@ -1,9 +1,10 @@
 import { LeftOutlined, RightOutlined } from '@ant-design/icons';
 import { Button, Card, Space } from 'antd';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { db } from "../db/database";
 import type { Course } from '../models/types';
 import { extractFlightSchools, sanitizeFlightSchoolName } from "../utils/flightSchool";
+import { useLongPress } from '../utils/longPress';
 import CourseForm from "./CourseForm";
 import CourseTitle from "./CourseTitle";
 
@@ -24,7 +25,6 @@ const CourseHeader = ({ course, prev, next, editable = false, onCourseUpdated }:
   const measurePrevRef = useRef<HTMLDivElement | null>(null);
   const measureNextRef = useRef<HTMLDivElement | null>(null);
   const titleMeasureRef = useRef<HTMLDivElement | null>(null);
-  const longPressTimerRef = useRef<number | null>(null);
 
   useLayoutEffect(() => {
     const recalc = () => {
@@ -57,22 +57,7 @@ const CourseHeader = ({ course, prev, next, editable = false, onCourseUpdated }:
     };
   }, [course.name, prev, next]);
 
-  useEffect(() => {
-    return () => {
-      if (longPressTimerRef.current !== null) {
-        window.clearTimeout(longPressTimerRef.current);
-      }
-    };
-  }, []);
-
-  const clearLongPressTimer = () => {
-    if (longPressTimerRef.current !== null) {
-      window.clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-  };
-
-  const openEditModal = () => {
+  const openEditModal = useCallback(() => {
     if (!editable) return;
 
     const loadFlightSchools = async () => {
@@ -88,25 +73,13 @@ const CourseHeader = ({ course, prev, next, editable = false, onCourseUpdated }:
 
     void loadFlightSchools();
     setEditModalOpen(true);
-  };
+  }, [editable]);
 
-  const handleLongPressStart = () => {
-    if (!editable) return;
-    clearLongPressTimer();
-    longPressTimerRef.current = window.setTimeout(() => {
-      openEditModal();
-      clearLongPressTimer();
-    }, 550);
-  };
+  const { longPressHandlers } = useLongPress(openEditModal, { disabled: !editable });
 
   const titleContent = (
     <div
-      onMouseDown={handleLongPressStart}
-      onMouseUp={clearLongPressTimer}
-      onMouseLeave={clearLongPressTimer}
-      onTouchStart={handleLongPressStart}
-      onTouchEnd={clearLongPressTimer}
-      onTouchCancel={clearLongPressTimer}
+      {...longPressHandlers}
       style={{ width: '100%', minWidth: 0, cursor: editable ? 'pointer' : 'default' }}
     >
       <CourseTitle course={course} />

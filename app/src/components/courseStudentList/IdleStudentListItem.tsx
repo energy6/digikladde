@@ -1,10 +1,10 @@
-import { EditOutlined } from '@ant-design/icons';
 import { faCircleExclamation, faPlaneDeparture } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { Button, Checkbox, List, Space } from 'antd';
 import { useRef } from 'react';
 import type { Student } from '../../models/types';
 import { isDoubleTap } from '../../utils/doubleTap';
+import { useLongPress } from '../../utils/longPress';
 import StudentAvatar from '../StudentAvatar';
 
 type IdleStudentListItemProps = {
@@ -33,10 +33,16 @@ const IdleStudentListItem = ({
   const itemClassName = deleteMode
     ? `student-idle-delete-item${isSelected ? ' student-idle-delete-item-selected' : ''}`
     : 'student-idle-item';
+  const { longPressHandlers, consumeLongPressClick, didLongPressFire } = useLongPress(
+    () => onEditStudent(student),
+    { disabled: deleteMode || !studentId },
+  );
 
   return (
     <List.Item
+      {...longPressHandlers}
       onClick={() => {
+        if (consumeLongPressClick()) return;
         if (deleteMode && studentId) {
           onToggleStudentSelection(studentId);
         }
@@ -47,6 +53,8 @@ const IdleStudentListItem = ({
         }
       }}
       onPointerUp={(event) => {
+        longPressHandlers.onPointerUp(event);
+        if (didLongPressFire()) return;
         if (!deleteMode && isDoubleTap(event, lastTapRef)) {
           void onOpenLastFlightRemarks(student);
         }
@@ -65,12 +73,6 @@ const IdleStudentListItem = ({
       ) : undefined}
       actions={deleteMode ? [] : [
         <Space orientation="horizontal" size="small" align="center">
-          <Button
-            icon={<EditOutlined />}
-            onClick={() => {
-              onEditStudent(student);
-            }}
-          />
           <Button
             type="primary"
             icon={<FontAwesomeIcon icon={faPlaneDeparture} />}
