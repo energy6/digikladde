@@ -101,7 +101,7 @@ export default defineConfig({
       filename: 'sw.ts',
       registerType: 'autoUpdate',
       injectRegister: 'auto',
-      includeAssets: ['favicon.svg', 'apple-touch-icon.png', 'masked-icon.svg'],
+      includeAssets: ['favicon.svg', 'apple-touch-icon.png', 'masked-icon.svg', 'notification-badge.png'],
       manifest: {
         name: 'DigiKladde - Gleitschirmflug-Kursverwaltung',
         short_name: 'DigiKladde',

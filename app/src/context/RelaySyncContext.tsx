@@ -8,6 +8,7 @@ import type {
   ShareSession,
   ShareSessionState,
   SyncEvent,
+  SyncNotification,
   SyncOperationType,
 } from '../models/types';
 import { createId, createJoinSecret } from '../utils/idGenerator';
@@ -33,6 +34,7 @@ type LogLocalDeltaInput = {
   operation: SyncOperationType;
   entitySyncId: string;
   payload: unknown;
+  notification?: SyncNotification;
 };
 
 type LogCourseDeltaInput = {
@@ -40,6 +42,7 @@ type LogCourseDeltaInput = {
   operation: SyncOperationType;
   entitySyncId: string;
   payload: unknown;
+  notification?: SyncNotification;
 };
 
 type RelaySyncContextValue = {
@@ -362,7 +365,8 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl, pushNotifi
   const sendDeltaEventsOverConnection = useCallback(async (connection: ConnectionState): Promise<number> => {
     if (connection.ws.readyState !== WebSocket.OPEN || !connection.ticket) return 0;
 
-    const events = await listCourseDeltaEvents(connection.courseSyncId);
+    const events = (await listCourseDeltaEvents(connection.courseSyncId))
+      .filter((event) => event.deviceId === deviceId && !event.sentToRelayAt);
     let sentCount = 0;
 
     for (const event of events) {
@@ -378,6 +382,7 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl, pushNotifi
         opTs: event.opTs,
         operation: event.operation,
         payload: event.payload,
+        notification: event.notification,
       };
 
       const message: RelayMessage = {
@@ -395,6 +400,9 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl, pushNotifi
 
       connection.ws.send(JSON.stringify(message));
       connection.sentOpIds.add(event.opId);
+      if (event.id) {
+        await db.syncEvents.update(event.id, { sentToRelayAt: new Date().toISOString() });
+      }
       sentCount += 1;
     }
 
@@ -416,6 +424,7 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl, pushNotifi
       operation: input.operation,
       entitySyncId: input.entitySyncId,
       payload: input.payload,
+      notification: input.notification,
       deviceId,
     });
 

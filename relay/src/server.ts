@@ -19,6 +19,7 @@ import {
   getRoomSessions,
   getRoomSessionsByDevice,
   listQueuedMessagesForDevice,
+  markDeltaDeliveredToDevice,
   markEventAndCheckRate,
   pruneExpiredRoomState,
   queueMessageForDevice,
@@ -284,17 +285,65 @@ const isDeltaSyncResponse = (envelope: RelayEnvelope): envelope is RelayEnvelope
   return envelope.payload.kind === 'delta' && isRecord(envelope.payload.envelope);
 };
 
-const sendQueuedUpdatePush = async (roomId: string, deviceId: string) => {
+type PushNotificationText = {
+  title: string;
+  body: string;
+};
+
+const readString = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : undefined);
+
+const buildFallbackNotification = (envelope: Record<string, unknown>): PushNotificationText => {
+  const operation = readString(envelope.operation);
+  const payload = isRecord(envelope.payload) ? envelope.payload : {};
+  const studentName = readString(payload.studentName) ?? readString(payload.name);
+
+  if (operation === 'flight_upsert') {
+    if (readString(payload.startTime) && !readString(payload.endTime) && !readString(payload.landingMarkedAt)) {
+      return { title: 'DigiKladde', body: `${studentName || 'Schüler'} gestartet` };
+    }
+
+    if (readString(payload.landingMarkedAt) && !readString(payload.endTime)) {
+      return { title: 'DigiKladde', body: `${studentName || 'Schüler'} gelandet` };
+    }
+
+    if (readString(payload.endTime) || readString(payload.landingFinalizedAt)) {
+      return { title: 'DigiKladde', body: `${studentName || 'Schüler'} abgeschlossen` };
+    }
+
+    return { title: 'DigiKladde', body: 'Flugdaten aktualisiert' };
+  }
+
+  if (operation === 'flight_delete') return { title: 'DigiKladde', body: 'Flug entfernt' };
+  if (operation === 'student_upsert') return { title: 'DigiKladde', body: `${studentName || 'Schüler'} aktualisiert` };
+  if (operation === 'student_delete') return { title: 'DigiKladde', body: `${studentName || 'Schüler'} entfernt` };
+  if (operation === 'course_upsert') return { title: 'DigiKladde', body: 'Kursdaten aktualisiert' };
+
+  return { title: 'DigiKladde', body: 'Neue Kursdaten verfügbar' };
+};
+
+const buildPushNotificationText = (messagePayload: Record<string, unknown>): PushNotificationText => {
+  const envelope = isRecord(messagePayload.envelope) ? messagePayload.envelope : {};
+  const notification = isRecord(envelope.notification) ? envelope.notification : {};
+  const title = readString(notification.title);
+  const body = readString(notification.body);
+
+  if (title && body) return { title, body };
+  return buildFallbackNotification(envelope);
+};
+
+const sendQueuedUpdatePush = async (roomId: string, deviceId: string, messagePayload: Record<string, unknown>) => {
   if (!webPushEnabled) return;
 
   const room = getRoom(roomId);
   const subscription = room ? getPushSubscriptionForDevice(room, deviceId) : undefined;
   if (!subscription) return;
 
+  const notification = buildPushNotificationText(messagePayload);
+
   try {
     await webPush.sendNotification(subscription, JSON.stringify({
-      title: 'DigiKladde',
-      body: 'Neue Kursdaten verfügbar.',
+      title: notification.title,
+      body: notification.body,
       data: {
         roomId,
       },
@@ -335,9 +384,25 @@ const forwardEvent = (session: Session, envelope: RelayEnvelope) => {
     deviceId: joined.deviceId,
     ticket: undefined,
   };
+  const deltaEnvelope = isDeltaSyncResponse(outbound) && isRecord(outbound.payload.envelope)
+    ? outbound.payload.envelope
+    : null;
+  const deltaOpId = deltaEnvelope ? readString(deltaEnvelope.opId) : undefined;
+  const deliverableDirectDevices = new Set<string>();
+  const blockedDirectDevices = new Set<string>();
 
   recipients.forEach((candidate) => {
     if (candidate.id === session.id) return;
+    if (deltaOpId && candidate.deviceId && candidate.deviceId !== joined.deviceId) {
+      if (!deliverableDirectDevices.has(candidate.deviceId) && !blockedDirectDevices.has(candidate.deviceId)) {
+        const accepted = markDeltaDeliveredToDevice(room, candidate.deviceId, deltaOpId, now());
+        if (accepted) deliverableDirectDevices.add(candidate.deviceId);
+        else blockedDirectDevices.add(candidate.deviceId);
+      }
+
+      if (blockedDirectDevices.has(candidate.deviceId)) return;
+    }
+
     send(candidate, outbound);
   });
 
@@ -349,16 +414,18 @@ const forwardEvent = (session: Session, envelope: RelayEnvelope) => {
     targetDeviceIds
       .filter((deviceId) => deviceId !== joined.deviceId)
       .forEach((targetDeviceId) => {
-        queueMessageForDevice(room, targetDeviceId, {
+        const queued = queueMessageForDevice(room, targetDeviceId, {
           ts: now(),
           fromDeviceId: joined.deviceId,
           type: 'sync_response',
           payload: outbound.payload,
-        });
+        }, deltaOpId);
+
+        if (!queued) return;
 
         const onlineSessions = getRoomSessionsByDevice(room, targetDeviceId);
         if (onlineSessions.length === 0) {
-          void sendQueuedUpdatePush(joined.roomId, targetDeviceId);
+          void sendQueuedUpdatePush(joined.roomId, targetDeviceId, outbound.payload);
         }
       });
   }

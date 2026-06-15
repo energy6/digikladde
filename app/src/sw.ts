@@ -10,6 +10,8 @@ type PushPayload = {
   data?: Record<string, unknown>;
 };
 
+const resolveAssetUrl = (path: string) => new URL(path, self.registration.scope).toString();
+
 cleanupOutdatedCaches();
 precacheAndRoute(self.__WB_MANIFEST);
 
@@ -18,8 +20,8 @@ self.addEventListener('push', (event) => {
   const title = payload?.title ?? 'DigiKladde';
   const options: NotificationOptions = {
     body: payload?.body ?? 'Neue Kursdaten verfügbar.',
-    icon: './icon-192.png',
-    badge: './masked-icon.svg',
+    icon: resolveAssetUrl('icon-192.png'),
+    badge: resolveAssetUrl('notification-badge.png'),
     data: payload?.data ?? {},
     tag: 'digikladde-sync',
   };

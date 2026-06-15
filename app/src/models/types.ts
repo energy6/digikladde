@@ -91,6 +91,12 @@ export interface RelaySyncEnvelope<TPayload = unknown> {
   opTs: string;
   operation: SyncOperationType;
   payload: TPayload;
+  notification?: SyncNotification;
+}
+
+export interface SyncNotification {
+  title: string;
+  body: string;
 }
 
 export interface SyncEvent {
@@ -104,6 +110,8 @@ export interface SyncEvent {
   opTs: string;
   deviceId: string;
   payload: unknown;
+  notification?: SyncNotification;
+  sentToRelayAt?: string;
 }
 
 export interface ShareSession {

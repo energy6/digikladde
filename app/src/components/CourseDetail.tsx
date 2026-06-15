@@ -28,6 +28,11 @@ const createNewStudentDraft = (flightSchool: string): Student => ({
   flightSchool,
 });
 
+const createSyncNotification = (body: string, courseName?: string) => ({
+  title: 'DigiKladde',
+  body: courseName ? `${body} (${courseName})` : body,
+});
+
 const hasSameManeuverSelection = (left: string[], right: string[]): boolean => {
   if (left.length !== right.length) return false;
 
@@ -518,13 +523,14 @@ const CourseDetail = () => {
     return syncId;
   }, [course, deviceId]);
 
-  const logStudentUpsertDelta = useCallback(async (courseId: number, student: Student) => {
+  const logStudentUpsertDelta = useCallback(async (courseId: number, student: Student, body?: string) => {
     if (!student.syncId) return;
 
     await logCourseDelta({
       courseId,
       operation: 'student_upsert',
       entitySyncId: student.syncId,
+      notification: createSyncNotification(body ?? `${student.name} wurde aktualisiert.`, course?.name),
       payload: {
         syncId: student.syncId,
         name: student.name,
@@ -538,7 +544,7 @@ const CourseDetail = () => {
         updatedByDeviceId: student.updatedByDeviceId,
       },
     });
-  }, [logCourseDelta]);
+  }, [course?.name, logCourseDelta]);
 
   const handleAddStudent = async () => {
     if (!course || !id) return;
@@ -569,6 +575,7 @@ const CourseDetail = () => {
         courseId,
         operation: 'student_upsert',
         entitySyncId: studentSyncId,
+        notification: createSyncNotification(`${normalizedStudent.name} wurde hinzugefügt.`, course.name),
         payload: {
           syncId: studentSyncId,
           name: normalizedStudent.name,
@@ -599,6 +606,7 @@ const CourseDetail = () => {
         courseId,
         operation: 'student_upsert',
         entitySyncId: createdStudent.syncId ?? createId('student'),
+        notification: createSyncNotification(`${createdStudent.name} wurde hinzugefügt.`, course.name),
         payload: {
           syncId: createdStudent.syncId,
           name: createdStudent.name,
@@ -643,6 +651,7 @@ const CourseDetail = () => {
       courseId,
       operation: 'flight_upsert',
       entitySyncId: flight.syncId ?? createId('flight'),
+      notification: createSyncNotification(`${selectedFlightStudent.name} wurde gestartet.`, course?.name),
       payload: {
         syncId: flight.syncId,
         studentSyncId,
@@ -707,6 +716,7 @@ const CourseDetail = () => {
       courseId,
       operation: 'student_upsert',
       entitySyncId: studentSyncId,
+      notification: createSyncNotification(`${editStudent.name} wurde aktualisiert.`, course.name),
       payload: {
         syncId: studentSyncId,
         name: editStudent.name,
@@ -741,10 +751,12 @@ const CourseDetail = () => {
     const flight = await db.flights.get(flightId);
     if (flight?.syncId) {
       const studentSyncId = await resolveStudentSyncId(flight.studentId);
+      const studentName = course?.students.find((student) => student.id === flight.studentId)?.name ?? 'Ein Schüler';
       await logCourseDelta({
         courseId: Number(id),
         operation: 'flight_upsert',
         entitySyncId: flight.syncId,
+        notification: createSyncNotification(`Landung von ${studentName} wurde markiert.`, course?.name),
         payload: {
           syncId: flight.syncId,
           studentSyncId,
@@ -773,10 +785,12 @@ const CourseDetail = () => {
     const flight = await db.flights.get(flightId);
     if (flight?.syncId) {
       const studentSyncId = await resolveStudentSyncId(flight.studentId);
+      const studentName = course?.students.find((student) => student.id === flight.studentId)?.name ?? 'Ein Schüler';
       await logCourseDelta({
         courseId: Number(id),
         operation: 'flight_upsert',
         entitySyncId: flight.syncId,
+        notification: createSyncNotification(`Landung von ${studentName} wurde zurückgenommen.`, course?.name),
         payload: {
           syncId: flight.syncId,
           studentSyncId,
@@ -852,6 +866,7 @@ const CourseDetail = () => {
           courseId,
           operation: 'flight_upsert',
           entitySyncId: finalizedFlightSyncId,
+          notification: createSyncNotification(`Flug von ${finalizedStudent?.name ?? 'einem Schüler'} wurde abgeschlossen.`, course?.name),
           payload: {
             syncId: finalizedFlightSyncId,
             studentSyncId,
@@ -866,7 +881,7 @@ const CourseDetail = () => {
       }
 
       if (finalizedStudent) {
-        await logStudentUpsertDelta(courseId, finalizedStudent);
+        await logStudentUpsertDelta(courseId, finalizedStudent, `Fluganzahl von ${finalizedStudent.name} wurde aktualisiert.`);
       }
     }
 
@@ -878,12 +893,16 @@ const CourseDetail = () => {
     const flight = await db.flights.get(flightId);
     const now = new Date().toISOString();
     const studentSyncId = flight ? await resolveStudentSyncId(flight.studentId) : undefined;
+    const studentName = flight
+      ? course?.students.find((student) => student.id === flight.studentId)?.name ?? 'Ein Schüler'
+      : 'Ein Schüler';
     await db.flights.delete(flightId);
     if (flight?.syncId) {
       await logCourseDelta({
         courseId: Number(id),
         operation: 'flight_delete',
         entitySyncId: flight.syncId,
+        notification: createSyncNotification(`Flug von ${studentName} wurde abgebrochen.`, course?.name),
         payload: {
           syncId: flight.syncId,
           studentSyncId,
@@ -927,6 +946,7 @@ const CourseDetail = () => {
         courseId,
         operation: 'student_delete',
         entitySyncId: student.syncId,
+        notification: createSyncNotification(`${student.name} wurde entfernt.`, course.name),
         payload: {
           syncId: student.syncId,
           deletedAt: new Date().toISOString(),
@@ -1110,6 +1130,7 @@ const CourseDetail = () => {
         courseId: Number(id),
         operation: 'flight_upsert',
         entitySyncId: flight.syncId,
+        notification: createSyncNotification(`Bemerkungen für ${selectedRemarkFlight.studentName} wurden aktualisiert.`, course?.name),
         payload: {
           syncId: flight.syncId,
           studentSyncId,
