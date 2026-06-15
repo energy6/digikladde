@@ -1,7 +1,7 @@
 import { QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons';
 import { faSync } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { Button, Layout, Space, Typography } from 'antd';
+import { Button, Layout, Space, Typography, theme } from 'antd';
 import { useRef, useState } from 'react';
 import { BrowserRouter, HashRouter, Route, Routes } from 'react-router-dom';
 import { useRegisterSW } from 'virtual:pwa-register/react';
@@ -96,8 +96,11 @@ const readInitialSettings = (): SettingsValues => {
 };
 
 function App() {
+  const { token } = theme.useToken();
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [settings, setSettings] = useState<SettingsValues>(readInitialSettings);
+  const [serviceWorkerRegistered, setServiceWorkerRegistered] = useState(false);
+  const [checkingForUpdates, setCheckingForUpdates] = useState(false);
   const registrationRef = useRef<ServiceWorkerRegistration | null>(null);
   const {
     offlineReady: [offlineReady, setOfflineReady],
@@ -106,6 +109,7 @@ function App() {
   } = useRegisterSW({
     onRegisteredSW: (_swUrl, registration) => {
       registrationRef.current = registration ?? null;
+      setServiceWorkerRegistered(Boolean(registration));
 
       if (registration) {
         window.setInterval(() => {
@@ -125,7 +129,13 @@ function App() {
 
   const handleCheckForUpdates = async () => {
     if (!registrationRef.current) return;
-    await registrationRef.current.update();
+
+    try {
+      setCheckingForUpdates(true);
+      await registrationRef.current.update();
+    } finally {
+      setCheckingForUpdates(false);
+    }
   };
 
   const handleSaveSettings = (nextSettings: SettingsValues) => {
@@ -198,7 +208,16 @@ function App() {
             <Typography.Text type="secondary" style={{ color: '#818181' }}>
               Version {appVersion} | {appTimestampLocal}
             </Typography.Text>
-            <Button type="link" size="small" icon={<FontAwesomeIcon icon={faSync} />} onClick={() => void handleCheckForUpdates()}/>
+            <Button
+              type="link"
+              size="small"
+              icon={<FontAwesomeIcon icon={faSync} />}
+              aria-label="Nach Updates suchen"
+              title="Nach Updates suchen"
+              loading={checkingForUpdates}
+              disabled={!serviceWorkerRegistered}
+              onClick={() => void handleCheckForUpdates()}
+            />
           </Space>
         </Footer>
 
@@ -209,19 +228,19 @@ function App() {
               right: 16,
               bottom: 'calc(16px + env(safe-area-inset-bottom))',
               zIndex: 1000,
-              background: '#ffffff',
-              border: '1px solid #d9d9d9',
-              borderRadius: 8,
-              boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+              background: token.colorBgElevated,
+              border: `1px solid ${token.colorBorderSecondary}`,
+              borderRadius: token.borderRadiusLG,
+              boxShadow: token.boxShadowSecondary,
               padding: 12,
               maxWidth: 360,
             }}
           >
             <Space orientation="vertical" size={8} style={{ width: '100%' }}>
-              <Typography.Text strong>
+              <Typography.Text strong style={{ color: token.colorText }}>
                 {needRefresh ? 'Update verfügbar' : 'Offline bereit'}
               </Typography.Text>
-              <Typography.Text type="secondary">
+              <Typography.Text type="secondary" style={{ color: token.colorTextSecondary }}>
                 {needRefresh
                   ? 'Eine neue App-Version wurde gefunden. Jetzt neu laden?'
                   : 'Die App ist installiert und kann offline genutzt werden.'}

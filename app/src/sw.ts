@@ -12,8 +12,14 @@ type PushPayload = {
 
 const resolveAssetUrl = (path: string) => new URL(path, self.registration.scope).toString();
 
+void self.skipWaiting();
+
 cleanupOutdatedCaches();
 precacheAndRoute(self.__WB_MANIFEST);
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});
 
 self.addEventListener('push', (event) => {
   const payload = event.data?.json() as PushPayload | undefined;
