@@ -32,17 +32,21 @@ type FlightPayload = {
   studentSyncId?: string;
   studentId?: number;
   maneuvers?: string[];
-  ratings?: Flight['ratings'];
-  remarks?: string[];
-  details?: Flight['details'];
+  ratings?: Flight['ratings'] | null;
+  remarks?: string[] | null;
+  details?: Flight['details'] | null;
   startTime?: string;
-  landingMarkedAt?: string;
-  landingPendingUntil?: string;
-  landingFinalizedAt?: string;
-  endTime?: string;
+  landingMarkedAt?: string | null;
+  landingPendingUntil?: string | null;
+  landingFinalizedAt?: string | null;
+  endTime?: string | null;
   updatedAt?: string;
   updatedByDeviceId?: string;
 };
+
+const hasOwnPayloadField = <T extends object>(payload: T, field: keyof T): boolean => (
+  Object.prototype.hasOwnProperty.call(payload, field)
+);
 
 const ensureCourseBySyncId = async (courseSyncId: string): Promise<Course | null> => {
   const existing = await db.courses.where('syncId').equals(courseSyncId).first();
@@ -208,14 +212,14 @@ const applyFlightUpsert = async (envelope: RelaySyncEnvelope): Promise<void> => 
       courseId: course.id,
       studentId: resolvedStudentId,
       maneuvers: [...(payload.maneuvers ?? [])],
-      ratings: payload.ratings,
+      ratings: payload.ratings ?? undefined,
       remarks: payload.remarks ? [...payload.remarks] : undefined,
-      details: payload.details,
+      details: payload.details ?? undefined,
       startTime: payload.startTime,
-      landingMarkedAt: payload.landingMarkedAt,
-      landingPendingUntil: payload.landingPendingUntil,
-      landingFinalizedAt: payload.landingFinalizedAt,
-      endTime: payload.endTime,
+      landingMarkedAt: payload.landingMarkedAt ?? undefined,
+      landingPendingUntil: payload.landingPendingUntil ?? undefined,
+      landingFinalizedAt: payload.landingFinalizedAt ?? undefined,
+      endTime: payload.endTime ?? undefined,
     });
     return;
   }
@@ -227,15 +231,15 @@ const applyFlightUpsert = async (envelope: RelaySyncEnvelope): Promise<void> => 
     updatedByDeviceId: payload.updatedByDeviceId ?? existing.updatedByDeviceId,
     courseId: course.id,
     studentId: resolvedStudentId ?? existing.studentId,
-    maneuvers: payload.maneuvers ? [...payload.maneuvers] : existing.maneuvers,
-    ratings: payload.ratings ?? existing.ratings,
-    remarks: payload.remarks ? [...payload.remarks] : existing.remarks,
-    details: payload.details ?? existing.details,
+    maneuvers: hasOwnPayloadField(payload, 'maneuvers') ? [...(payload.maneuvers ?? [])] : existing.maneuvers,
+    ratings: hasOwnPayloadField(payload, 'ratings') ? payload.ratings ?? undefined : existing.ratings,
+    remarks: hasOwnPayloadField(payload, 'remarks') ? payload.remarks ? [...payload.remarks] : undefined : existing.remarks,
+    details: hasOwnPayloadField(payload, 'details') ? payload.details ?? undefined : existing.details,
     startTime: payload.startTime ?? existing.startTime,
-    landingMarkedAt: payload.landingMarkedAt ?? existing.landingMarkedAt,
-    landingPendingUntil: payload.landingPendingUntil ?? existing.landingPendingUntil,
-    landingFinalizedAt: payload.landingFinalizedAt ?? existing.landingFinalizedAt,
-    endTime: payload.endTime ?? existing.endTime,
+    landingMarkedAt: hasOwnPayloadField(payload, 'landingMarkedAt') ? payload.landingMarkedAt ?? undefined : existing.landingMarkedAt,
+    landingPendingUntil: hasOwnPayloadField(payload, 'landingPendingUntil') ? payload.landingPendingUntil ?? undefined : existing.landingPendingUntil,
+    landingFinalizedAt: hasOwnPayloadField(payload, 'landingFinalizedAt') ? payload.landingFinalizedAt ?? undefined : existing.landingFinalizedAt,
+    endTime: hasOwnPayloadField(payload, 'endTime') ? payload.endTime ?? undefined : existing.endTime,
   });
 };
 
