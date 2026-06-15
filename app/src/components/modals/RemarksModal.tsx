@@ -1,7 +1,8 @@
 import { faCheck, faMicrophone } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { Button, Form, Input, Modal, Slider, Space, Typography } from 'antd';
-import { Fragment } from 'react';
+import SliderInternalContext from 'antd/es/slider/Context';
+import { cloneElement, Fragment } from 'react';
 import { startRatingKey, type ManeuverRatings } from '../../models/types';
 import { formatRatingLabel, getRatingKeys } from '../../utils/maneuverRatings';
 import ManeuverDropdown from '../ManeuverDropdown';
@@ -127,15 +128,30 @@ const RemarksModal = ({
                 <Text className="remarks-rating-label">
                   {formatRatingLabel(ratingKey, lastRatings)}
                 </Text>
-                <Slider
-                  min={0}
-                  max={10}
-                  step={1}
-                  tooltip={{ formatter: null }}
-                  value={ratings[ratingKey] ?? 0}
-                  disabled={remarksReadOnly}
-                  onChange={(value) => onRatingChange(ratingKey, value)}
-                />
+                <SliderInternalContext.Provider
+                  value={{
+                    handleRender: (node, info) => cloneElement(
+                      node,
+                      {
+                        className: [node.props.className, 'remarks-rating-handle']
+                          .filter(Boolean)
+                          .join(' '),
+                      },
+                      <span className="remarks-rating-handle-value">{info.value}</span>,
+                    ),
+                  }}
+                >
+                  <Slider
+                    min={0}
+                    max={10}
+                    step={1}
+                    tooltip={{ formatter: null }}
+                    value={ratings[ratingKey] ?? 0}
+                    disabled={remarksReadOnly}
+                    ariaValueTextFormatterForHandle={(value) => `Bewertung ${value} von 10`}
+                    onChange={(value) => onRatingChange(ratingKey, value)}
+                  />
+                </SliderInternalContext.Provider>
               </Fragment>
             ))}
           </div>
