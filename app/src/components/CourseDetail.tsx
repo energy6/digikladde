@@ -1,7 +1,7 @@
-import { PlusOutlined } from '@ant-design/icons';
+import { FullscreenExitOutlined, FullscreenOutlined, PlusOutlined } from '@ant-design/icons';
 import { faTrashCan, faSortDown, faSortUp } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { Button, Card, List, Modal, Popconfirm, Space, Typography } from 'antd';
+import { Button, Card, List, Modal, Popconfirm, Space, Tooltip, Typography } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useFlightSchool } from '../context/FlightSchoolContext';
@@ -130,6 +130,7 @@ const CourseDetail = () => {
   const [remarksContextText, setRemarksContextText] = useState('');
   const speechRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [studentsMaximized, setStudentsMaximized] = useState(false);
 
   const isPendingLanding = (flight: Flight) => Boolean(flight.landingPendingUntil && !flight.landingFinalizedAt);
 
@@ -1215,30 +1216,52 @@ const CourseDetail = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (!studentsMaximized || typeof document === 'undefined') return undefined;
+
+    document.body.classList.add('course-detail-maximized');
+
+    return () => {
+      document.body.classList.remove('course-detail-maximized');
+    };
+  }, [studentsMaximized]);
+
   if (!course) {
     return <Text>Lade Kursdaten…</Text>;
   }
 
   return (
-    <div>
-      <CourseHeader
-        course={course}
-        prev={() => navigate(`/`)}
-        next={() => navigate(`/course/${id}/evaluation`)}
-        editable
-        onCourseUpdated={(updatedCourse) => {
-          setCourse(updatedCourse);
-          void refresh();
-        }}
-      />
+    <div className={`course-detail${studentsMaximized ? ' course-detail--maximized' : ''}`}>
+      {!studentsMaximized && (
+        <CourseHeader
+          course={course}
+          prev={() => navigate(`/`)}
+          next={() => navigate(`/course/${id}/evaluation`)}
+          editable
+          onCourseUpdated={(updatedCourse) => {
+            setCourse(updatedCourse);
+            void refresh();
+          }}
+        />
+      )}
 
-      <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
+      <Space className="course-detail-stack" orientation="vertical" size="middle" style={{ width: '100%' }}>
         <Card
+          className="course-detail-student-card"
           size="small"
           styles={{ body: { padding: 12 } }}
           title={`Schüler (${course.students.length})`}
           extra={(
             <Space orientation="horizontal" size="small" align="center">
+              <Tooltip title={studentsMaximized ? 'Maximize verlassen' : 'Schülerliste maximieren'}>
+                <Button
+                  key="maximize"
+                  icon={studentsMaximized ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
+                  aria-label={studentsMaximized ? 'Maximize verlassen' : 'Schülerliste maximieren'}
+                  title={studentsMaximized ? 'Maximize verlassen' : 'Schülerliste maximieren'}
+                  onClick={() => setStudentsMaximized((current) => !current)}
+                />
+              </Tooltip>
               <Button
                 key="sort"
                 type={deleteMode ? 'primary' : 'default'}
@@ -1352,7 +1375,7 @@ const CourseDetail = () => {
           )}
         </Card>
 
-        <CourseSyncFooter course={course} />
+        {!studentsMaximized && <CourseSyncFooter course={course} />}
       </Space>
 
       <AddStudentModal

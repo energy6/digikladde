@@ -82,6 +82,43 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 
+body.course-detail-maximized .app-header,
+body.course-detail-maximized .app-footer {
+  display: none !important;
+}
+
+body.course-detail-maximized .app-content {
+  max-width: none !important;
+  padding: 8px !important;
+  overflow: hidden;
+}
+
+.course-detail {
+  min-height: 100%;
+}
+
+.course-detail--maximized,
+.course-detail--maximized .course-detail-stack {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.course-detail--maximized .course-detail-student-card {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.course-detail--maximized .course-detail-student-card > .ant-card-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 @supports (min-height: 100dvh) {
   #root {
     min-height: 100dvh;
