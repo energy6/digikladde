@@ -20,6 +20,11 @@ body,
   --student-photo-actions-shadow: rgba(5, 20, 35, 0.24);
   --remarks-rating-handle-value: rgba(0, 0, 0, 0.88);
   --remarks-rating-handle-value-disabled: rgba(0, 0, 0, 0.65);
+  --maneuver-dropdown-trigger-text: rgba(0, 0, 0, 0.88);
+  --maneuver-dropdown-trigger-bg: #ffffff;
+  --maneuver-dropdown-trigger-border: #d9d9d9;
+  --maneuver-dropdown-trigger-border-active: #4096ff;
+  --maneuver-dropdown-trigger-focus-shadow: rgba(5, 145, 255, 0.1);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -39,6 +44,11 @@ body,
     --student-photo-actions-shadow: rgba(0, 0, 0, 0.42);
     --remarks-rating-handle-value: rgba(255, 255, 255, 0.92);
     --remarks-rating-handle-value-disabled: rgba(255, 255, 255, 0.68);
+    --maneuver-dropdown-trigger-text: rgba(255, 255, 255, 0.85);
+    --maneuver-dropdown-trigger-bg: #141414;
+    --maneuver-dropdown-trigger-border: #424242;
+    --maneuver-dropdown-trigger-border-active: #1668dc;
+    --maneuver-dropdown-trigger-focus-shadow: rgba(22, 104, 220, 0.2);
   }
 }
 
@@ -181,24 +191,29 @@ a {
   align-items: center;
   gap: 8px;
   padding: 4px 11px;
-  color: rgba(0, 0, 0, 0.88);
-  background: #fff;
-  border: 1px solid #d9d9d9;
+  color: var(--maneuver-dropdown-trigger-text);
+  background: var(--maneuver-dropdown-trigger-bg);
+  border: 1px solid var(--maneuver-dropdown-trigger-border);
   border-radius: 6px;
   cursor: pointer;
   text-align: left;
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
+.maneuver-dropdown-trigger .ant-typography,
+.maneuver-dropdown-trigger .anticon {
+  color: inherit;
+}
+
 .maneuver-dropdown-trigger:hover,
 .maneuver-dropdown-trigger[aria-expanded="true"] {
-  border-color: #4096ff;
+  border-color: var(--maneuver-dropdown-trigger-border-active);
 }
 
 .maneuver-dropdown-trigger:focus-visible {
-  border-color: #4096ff;
+  border-color: var(--maneuver-dropdown-trigger-border-active);
   outline: 0;
-  box-shadow: 0 0 0 2px rgba(5, 145, 255, 0.1);
+  box-shadow: 0 0 0 2px var(--maneuver-dropdown-trigger-focus-shadow);
 }
 
 .student-photo-avatar,
