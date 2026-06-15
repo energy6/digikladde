@@ -1,5 +1,5 @@
 import { db } from '../db/database';
-import type { Course, RelaySyncEnvelope, SyncEntityType, SyncEvent, SyncOperationType } from '../models/types';
+import type { Course, RelaySyncEnvelope, SyncEntityType, SyncEvent, SyncNotification, SyncOperationType } from '../models/types';
 import { createId } from './idGenerator';
 
 const inferEntityType = (operation: SyncOperationType): SyncEntityType => {
@@ -32,6 +32,7 @@ type LogLocalDeltaInput = {
   entitySyncId: string;
   payload: unknown;
   deviceId: string;
+  notification?: SyncNotification;
 };
 
 export const logLocalDeltaEvent = async (input: LogLocalDeltaInput): Promise<SyncEvent> => {
@@ -53,6 +54,7 @@ export const logLocalDeltaEvent = async (input: LogLocalDeltaInput): Promise<Syn
     opTs,
     deviceId: input.deviceId,
     payload: input.payload,
+    notification: input.notification,
   };
 
   const id = Number(await db.syncEvents.add(event));
@@ -75,6 +77,7 @@ export const ingestRemoteDeltaEvent = async (envelope: RelaySyncEnvelope): Promi
     opTs: envelope.opTs,
     deviceId: envelope.deviceId,
     payload: envelope.payload,
+    notification: envelope.notification,
   };
 
   const id = Number(await db.syncEvents.add(event));

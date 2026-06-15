@@ -29,6 +29,7 @@ export type RoomState = {
   knownDevices: Set<string>;
   inboxesByDeviceId: Map<string, QueuedRelayMessage[]>;
   nextQueueSeqByDeviceId: Map<string, number>;
+  deliveredDeltaOpIdsByDeviceId: Map<string, Map<string, number>>;
   pushSubscriptionsByDeviceId: Map<string, PushSubscriptionPayload>;
   joinAttemptsTimestamps: number[];
   messageBuffer: BufferedMessage[];
@@ -112,6 +113,7 @@ export const getOrCreateRoom = (roomId: string, joinSecret: string): RoomState =
     knownDevices: new Set<string>(),
     inboxesByDeviceId: new Map<string, QueuedRelayMessage[]>(),
     nextQueueSeqByDeviceId: new Map<string, number>(),
+    deliveredDeltaOpIdsByDeviceId: new Map<string, Map<string, number>>(),
     pushSubscriptionsByDeviceId: new Map<string, PushSubscriptionPayload>(),
     joinAttemptsTimestamps: [],
     messageBuffer: [],
@@ -172,7 +174,15 @@ export const queueMessageForDevice = (
   room: RoomState,
   targetDeviceId: string,
   message: Omit<QueuedRelayMessage, 'seq'>,
+  opId?: string,
 ) => {
+  if (opId) {
+    const delivered = room.deliveredDeltaOpIdsByDeviceId.get(targetDeviceId) ?? new Map<string, number>();
+    if (delivered.has(opId)) return null;
+    delivered.set(opId, message.ts);
+    room.deliveredDeltaOpIdsByDeviceId.set(targetDeviceId, delivered);
+  }
+
   const seq = room.nextQueueSeqByDeviceId.get(targetDeviceId) ?? 1;
   const queued: QueuedRelayMessage = {
     ...message,
@@ -205,6 +215,20 @@ export const ackQueuedMessagesForDevice = (room: RoomState, deviceId: string, th
   }
 
   room.lastActiveAt = Date.now();
+};
+
+export const markDeltaDeliveredToDevice = (
+  room: RoomState,
+  targetDeviceId: string,
+  opId: string,
+  ts = Date.now(),
+) => {
+  const delivered = room.deliveredDeltaOpIdsByDeviceId.get(targetDeviceId) ?? new Map<string, number>();
+  if (delivered.has(opId)) return false;
+  delivered.set(opId, ts);
+  room.deliveredDeltaOpIdsByDeviceId.set(targetDeviceId, delivered);
+  room.lastActiveAt = ts;
+  return true;
 };
 
 export const setPushSubscriptionForDevice = (
@@ -247,6 +271,18 @@ export const pruneExpiredRoomState = (now = Date.now()) => {
       }
     });
 
+    room.deliveredDeltaOpIdsByDeviceId.forEach((delivered, deviceId) => {
+      delivered.forEach((ts, opId) => {
+        if (ts <= now - relayConfig.queueRetentionMs) {
+          delivered.delete(opId);
+        }
+      });
+
+      if (!delivered.size) {
+        room.deliveredDeltaOpIdsByDeviceId.delete(deviceId);
+      }
+    });
+
     if (
       !room.members.size
       && room.lastActiveAt <= now - relayConfig.queueRetentionMs
@@ -263,6 +299,9 @@ export const snapshotStats = () => ({
   connectionsByIp: connectionCountByIp.size,
   queuedMessageCount: Array.from(rooms.values()).reduce((total, room) => (
     total + Array.from(room.inboxesByDeviceId.values()).reduce((roomTotal, inbox) => roomTotal + inbox.length, 0)
+  ), 0),
+  deliveredDeltaOpIdCount: Array.from(rooms.values()).reduce((total, room) => (
+    total + Array.from(room.deliveredDeltaOpIdsByDeviceId.values()).reduce((roomTotal, delivered) => roomTotal + delivered.size, 0)
   ), 0),
   pushSubscriptionCount: Array.from(rooms.values()).reduce((total, room) => total + room.pushSubscriptionsByDeviceId.size, 0),
 });

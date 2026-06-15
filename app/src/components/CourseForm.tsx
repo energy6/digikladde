@@ -44,6 +44,11 @@ const buildDefaultValues = (defaultFlightSchool?: string): CourseFormValues => (
   flightSchool: sanitizeFlightSchoolName(defaultFlightSchool),
 });
 
+const createSyncNotification = (body: string, courseName: string) => ({
+  title: 'DigiKladde',
+  body: `${body} (${courseName})`,
+});
+
 const CourseForm = ({
   open,
   courseId,
@@ -305,6 +310,7 @@ const CourseForm = ({
             courseId: effectiveCourseId,
             operation: 'course_upsert',
             entitySyncId: savedCourse.syncId,
+            notification: createSyncNotification('Kursdaten wurden aktualisiert.', updatedCourse.name),
             payload: {
               syncId: savedCourse.syncId,
               name: updatedCourse.name,
@@ -345,6 +351,7 @@ const CourseForm = ({
         courseId: createdId,
         operation: 'course_upsert',
         entitySyncId: createdCourse.syncId ?? createId('course'),
+        notification: createSyncNotification('Kurs wurde erstellt.', createdCourse.name),
         payload: {
           syncId: createdCourse.syncId,
           name: createdCourse.name,
