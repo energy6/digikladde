@@ -172,3 +172,11 @@ export interface CourseSyncSnapshot {
   };
   flights: SharedFlightSnapshot[];
 }
+
+export interface CourseBackupEnvelope {
+  kind: 'digikladde.course-backup';
+  formatVersion: 1;
+  exportedAt: string;
+  appVersion?: string;
+  snapshot: CourseSyncSnapshot;
+}

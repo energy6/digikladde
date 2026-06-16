@@ -1,12 +1,21 @@
 import { RightOutlined } from '@ant-design/icons';
-import { faCirclePlus, faTrashCan } from '@fortawesome/free-solid-svg-icons';
+import { faCirclePlus, faFileExport, faFileImport, faTrashCan } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { Button, Card, Checkbox, List, message, Modal, Select, Space, Typography } from 'antd';
+import { Button, Card, Checkbox, List, message, Modal, Select, Space, Typography, Upload } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFlightSchool } from '../context/FlightSchoolContext';
+import { useRelaySync } from '../context/RelaySyncContext';
 import { db } from '../db/database';
 import type { Course } from '../models/types';
+import {
+  buildCourseBackupFilename,
+  CourseBackupError,
+  exportCourseBackup,
+  importCourseBackupCopy,
+  parseCourseBackup,
+  serializeCourseBackup,
+} from '../utils/courseBackup';
 import { ALL_FLIGHT_SCHOOLS, extractFlightSchools, sanitizeFlightSchoolName } from '../utils/flightSchool';
 import { useLongPress } from '../utils/longPress';
 import { parseJoinInvite } from '../utils/parseJoinInvite';
@@ -19,6 +28,7 @@ type CourseListItemProps = {
   selected: boolean;
   onOpenCourse: (courseId: number | undefined) => void;
   onEditCourse: (course: Course) => void;
+  onExportCourse: (course: Course) => void;
   onSelectCourse: (courseId: number | undefined) => void;
 };
 
@@ -28,6 +38,7 @@ const CourseListItem = ({
   selected,
   onOpenCourse,
   onEditCourse,
+  onExportCourse,
   onSelectCourse,
 }: CourseListItemProps) => {
   const { longPressHandlers, consumeLongPressClick } = useLongPress(
@@ -59,11 +70,26 @@ const CourseListItem = ({
           )}
           <CourseTitle course={course} />
         </div>
-        {!deleteMode && <Button type="link" icon={<RightOutlined />} />}
+        {!deleteMode && (
+          <Space size={0}>
+            <Button
+              icon={<FontAwesomeIcon icon={faFileExport} />}
+              aria-label="Kurs exportieren"
+              title="Kurs exportieren"
+              onClick={(event) => {
+                event.stopPropagation();
+                onExportCourse(course);
+              }}
+            />
+            <Button type="link" icon={<RightOutlined />} aria-label="Kurs öffnen" title="Kurs öffnen" />
+          </Space>
+        )}
       </Card>
     </List.Item>
   );
 };
+
+const appVersion = __APP_VERSION__;
 
 const CourseList = () => {
   const [courses, setCourses] = useState<Course[]>([]);
@@ -73,6 +99,7 @@ const CourseList = () => {
   const [editCourseId, setEditCourseId] = useState<number | undefined>(undefined);
   const [initialJoinInviteRaw, setInitialJoinInviteRaw] = useState<string | undefined>(undefined);
   const { activeFlightSchool, setActiveFlightSchool } = useFlightSchool();
+  const { deviceId } = useRelaySync();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -164,6 +191,76 @@ const CourseList = () => {
     });
   };
 
+  const reloadCourses = async () => {
+    const allCourses = await db.courses.toArray();
+    setCourses(allCourses);
+    return allCourses;
+  };
+
+  const downloadTextFile = (filename: string, content: string) => {
+    const blob = new Blob([content], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportCourse = async (course: Course) => {
+    if (!course.id) return;
+
+    try {
+      const backup = await exportCourseBackup(course.id, deviceId, appVersion);
+      downloadTextFile(buildCourseBackupFilename(course), serializeCourseBackup(backup));
+      message.success('Kursbackup wurde exportiert.');
+    } catch (error) {
+      message.error('Kursbackup konnte nicht exportiert werden.');
+      console.error(error);
+    }
+  };
+
+  const getImportErrorMessage = (error: unknown): string => {
+    if (!(error instanceof CourseBackupError)) return 'Kursbackup konnte nicht importiert werden.';
+
+    switch (error.code) {
+      case 'invalid_json':
+        return 'Die Datei ist kein gültiges JSON.';
+      case 'invalid_format':
+        return 'Die Datei ist kein DigiKladde-Kursbackup.';
+      case 'unsupported_version':
+        return 'Diese Backup-Version wird nicht unterstützt.';
+      case 'invalid_snapshot':
+        return 'Das Kursbackup enthält ungültige oder unvollständige Kursdaten.';
+      case 'import_failed':
+        return 'Kursbackup konnte nicht importiert werden.';
+      default:
+        return 'Kursbackup konnte nicht importiert werden.';
+    }
+  };
+
+  const handleImportCourseBackup = async (file: File) => {
+    try {
+      const rawBackup = await file.text();
+      const backup = parseCourseBackup(rawBackup);
+      const result = await importCourseBackupCopy(backup, deviceId);
+      await reloadCourses();
+
+      const importedCourse = await db.courses.get(result.courseId);
+      if (importedCourse) {
+        setActiveFlightSchool(importedCourse.flightSchool);
+      }
+
+      message.success(`Kursbackup importiert: ${result.importedStudents} Schüler, ${result.importedFlights} Flüge.`);
+      void navigate(`/course/${result.courseId}`);
+    } catch (error) {
+      message.error(getImportErrorMessage(error));
+      console.error(error);
+    }
+  };
+
   return (
     <>
       <div style={{ maxWidth: 1000, margin: '0 auto' }}>
@@ -182,7 +279,23 @@ const CourseList = () => {
                 {deleteMode && selectedCourses.size > 0 ? selectedCourses.size : ''}
               </Button>
               {!deleteMode && (
-                <Button type="primary" icon={<FontAwesomeIcon icon={faCirclePlus} />} onClick={() => setCreateModalOpen(true)} />
+                <>
+                  <Upload
+                    accept=".digikladde.json,application/json"
+                    showUploadList={false}
+                    beforeUpload={(file) => {
+                      void handleImportCourseBackup(file);
+                      return Upload.LIST_IGNORE;
+                    }}
+                  >
+                    <Button
+                      icon={<FontAwesomeIcon icon={faFileImport} />}
+                      aria-label="Kursbackup importieren"
+                      title="Kursbackup importieren"
+                    />
+                  </Upload>
+                  <Button type="primary" icon={<FontAwesomeIcon icon={faCirclePlus} />} onClick={() => setCreateModalOpen(true)} />
+                </>
               )}
             </Space>
           </Space>
@@ -215,6 +328,9 @@ const CourseList = () => {
                   }
                 }}
                 onEditCourse={(courseToEdit) => setEditCourseId(courseToEdit.id)}
+                onExportCourse={(courseToExport) => {
+                  void handleExportCourse(courseToExport);
+                }}
                 onSelectCourse={handleSelectCourse}
               />
             )}
@@ -230,8 +346,7 @@ const CourseList = () => {
         onJoinInviteHandled={() => setInitialJoinInviteRaw(undefined)}
         onClose={() => setCreateModalOpen(false)}
         onSaved={async (savedCourse) => {
-          const allCourses = await db.courses.toArray();
-          setCourses(allCourses);
+          await reloadCourses();
           setActiveFlightSchool(savedCourse.flightSchool);
         }}
       />
@@ -243,8 +358,7 @@ const CourseList = () => {
         defaultFlightSchool={activeFlightSchool === ALL_FLIGHT_SCHOOLS ? undefined : activeFlightSchool}
         onClose={() => setEditCourseId(undefined)}
         onSaved={async (savedCourse) => {
-          const allCourses = await db.courses.toArray();
-          setCourses(allCourses);
+          await reloadCourses();
           setActiveFlightSchool(savedCourse.flightSchool);
         }}
       />

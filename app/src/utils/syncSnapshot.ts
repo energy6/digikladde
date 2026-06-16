@@ -69,6 +69,7 @@ const ensureStudentSnapshotSyncIds = async (
 
 const ensureFlightsSyncIds = async (
   flights: Flight[],
+  studentSyncIdByLocalId: Map<number, string>,
   deviceId: string,
   now: string,
 ): Promise<SharedFlightSnapshot[]> => {
@@ -86,7 +87,7 @@ const ensureFlightsSyncIds = async (
     }
 
     const student = await db.students.get(flight.studentId);
-    const studentSyncId = student?.syncId ?? `student_local_${flight.studentId}`;
+    const studentSyncId = student?.syncId ?? studentSyncIdByLocalId.get(flight.studentId) ?? `student_local_${flight.studentId}`;
 
     snapshots.push({
       syncId,
@@ -122,7 +123,15 @@ export const exportCourseSnapshot = async (
   const courseSyncId = await ensureCourseSyncId(course, deviceId, now);
   const studentSnapshots = await ensureStudentSnapshotSyncIds(course, deviceId, now);
   const flights = await db.flights.where('courseId').equals(course.id).toArray();
-  const flightSnapshots = await ensureFlightsSyncIds(flights, deviceId, now);
+  const studentSyncIdByLocalId = new Map(
+    studentSnapshots
+      .map((student, index) => {
+        const localId = course.students[index]?.id;
+        return typeof localId === 'number' ? [localId, student.syncId] as const : null;
+      })
+      .filter((entry): entry is readonly [number, string] => entry !== null),
+  );
+  const flightSnapshots = await ensureFlightsSyncIds(flights, studentSyncIdByLocalId, deviceId, now);
 
   return {
     snapshotVersion: 1,
