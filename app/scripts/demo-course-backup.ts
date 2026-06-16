@@ -2,11 +2,14 @@
 
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import type { CourseType } from '../src/models/types';
-import { buildDemoCourseDataset, defaultDemoCourseOptions, parseDemoCourseType } from '../src/utils/demoCourseData';
-import { createCoursePDFArrayBuffer } from '../src/utils/pdfExport';
+import type { CourseBackupEnvelope, CourseType } from '../src/models/types';
+import {
+  buildDemoCourseSnapshot,
+  defaultDemoCourseOptions,
+  parseDemoCourseType,
+} from '../src/utils/demoCourseData';
 
-type DemoCliOptions = {
+type DemoBackupCliOptions = {
   seed: number;
   output: string;
   days: number;
@@ -14,14 +17,14 @@ type DemoCliOptions = {
   courseType: CourseType;
 };
 
-const DEFAULTS: DemoCliOptions = {
+const DEFAULTS: DemoBackupCliOptions = {
   ...defaultDemoCourseOptions,
-  output: 'output/Kursbericht_Demo.pdf',
+  output: 'output/demo-course.digikladde.json',
 };
 
-const parseCliOptions = (): DemoCliOptions => {
+const parseCliOptions = (): DemoBackupCliOptions => {
   const args = process.argv.slice(2);
-  const options: DemoCliOptions = { ...DEFAULTS };
+  const options: DemoBackupCliOptions = { ...DEFAULTS };
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -57,7 +60,7 @@ const parseCliOptions = (): DemoCliOptions => {
     }
 
     if (arg === '--help' || arg === '-h') {
-      console.log('Usage: npm run demo:pdf-export -- [--seed 42] [--output output/demo.pdf] [--days 4] [--students 6] [--course-type Windenkurs]');
+      console.log('Usage: npm run demo:course-backup -- [--seed 42] [--output output/demo-course.digikladde.json] [--days 4] [--students 6] [--course-type Windenkurs]');
       process.exit(0);
     }
 
@@ -73,24 +76,25 @@ const parseCliOptions = (): DemoCliOptions => {
 
 const main = async () => {
   const options = parseCliOptions();
-  const dataset = buildDemoCourseDataset(options);
+  const snapshot = buildDemoCourseSnapshot(options);
+  const backup: CourseBackupEnvelope = {
+    kind: 'digikladde.course-backup',
+    formatVersion: 1,
+    exportedAt: snapshot.exportedAt,
+    appVersion: `demo-seed-${options.seed}`,
+    snapshot,
+  };
 
   const outputPath = resolve(process.cwd(), options.output);
   await mkdir(dirname(outputPath), { recursive: true });
+  await writeFile(outputPath, `${JSON.stringify(backup, null, 2)}\n`, 'utf-8');
 
-  const arrayBuffer = createCoursePDFArrayBuffer(dataset.course, dataset.flights, {
-    appVersion: `demo-seed-${options.seed}`,
-    locale: 'de-DE',
-  });
-
-  await writeFile(outputPath, Buffer.from(arrayBuffer));
-
-  console.log(`PDF Demo erstellt: ${outputPath}`);
+  console.log(`Kursbackup Demo erstellt: ${outputPath}`);
   console.log(`Seed: ${options.seed}`);
   console.log(`Kurstyp: ${options.courseType}`);
   console.log(`Tage: ${options.days}`);
-  console.log(`Schueler: ${dataset.students.length}`);
-  console.log(`Fluege gesamt: ${dataset.flights.length}`);
+  console.log(`Schueler: ${snapshot.course.students.length}`);
+  console.log(`Fluege gesamt: ${snapshot.flights.length}`);
 };
 
 void main();
