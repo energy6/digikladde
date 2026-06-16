@@ -88,6 +88,8 @@ body.course-detail-maximized .app-footer {
 }
 
 body.course-detail-maximized .app-content {
+  height: 100%;
+  min-height: 0;
   max-width: none !important;
   padding: 8px !important;
   overflow: hidden;
@@ -103,12 +105,19 @@ body.course-detail-maximized .app-content {
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  overflow: hidden;
 }
 
 .course-detail--maximized .course-detail-student-card {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
+  min-height: 0;
+}
+
+.course-detail--maximized .course-detail-stack > .ant-space-item {
+  display: flex;
+  flex: 1 1 auto;
   min-height: 0;
 }
 

@@ -29,8 +29,12 @@ const ActiveStudentListItem = ({
   return (
     <List.Item
       onDoubleClick={() => onOpenRemarks(flight, student)}
-      onPointerUp={(event) => {
+      onPointerDown={(event) => {
+        if (event.pointerType === 'mouse') return;
+
         if (isDoubleTap(event, lastTapRef)) {
+          event.preventDefault();
+          event.stopPropagation();
           onOpenRemarks(flight, student);
         }
       }}
