@@ -140,7 +140,10 @@ export const assertCourseSyncSnapshot = (value: unknown): CourseSyncSnapshot => 
     ...(value as unknown as CourseSyncSnapshot),
     course: {
       ...(course as unknown as CourseSyncSnapshot['course']),
-      students,
+      students: students.map((student) => ({
+        ...student,
+        totalAltitudeMeters: student.totalAltitudeMeters ?? 0,
+      })),
     },
     flights,
   };
@@ -207,6 +210,7 @@ export const buildCourseBackupCopyRecords = (
       glider: student.glider,
       color: student.color,
       totalFlights: student.totalFlights,
+      totalAltitudeMeters: student.totalAltitudeMeters ?? 0,
       flightSchool: sanitizeFlightSchoolName(student.flightSchool),
       lastRatings: student.lastRatings,
       photoDataUrl: student.photoDataUrl,

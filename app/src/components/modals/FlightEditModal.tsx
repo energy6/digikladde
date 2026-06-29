@@ -1,7 +1,7 @@
 import { SwapOutlined } from '@ant-design/icons';
 import { faFloppyDisk, faTrashCan } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { AutoComplete, Button, Col, Form, Input, message, Modal, Popconfirm, Row, Select, Slider, Space, Tooltip, Typography } from 'antd';
+import { AutoComplete, Button, Col, Form, Input, InputNumber, message, Modal, Popconfirm, Row, Select, Slider, Space, Tooltip, Typography } from 'antd';
 import { cloneElement, Fragment, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import SliderInternalContext from 'antd/es/slider/Context';
@@ -126,6 +126,7 @@ const FlightEditModal = ({
   const [details, setDetails] = useState<FlightDetails>({});
   const [selectedManeuvers, setSelectedManeuvers] = useState<string[]>([]);
   const [ratings, setRatings] = useState<ManeuverRatings>({});
+  const showInlineAltitudeManeuvers = course.courseType === 'Höhenkurs' && maneuversEnabled;
 
   useEffect(() => {
     if (!open || !flight) return;
@@ -415,17 +416,41 @@ const FlightEditModal = ({
                 />
               </Col>
             </Row>
+            <div className="start-flight-altitude-maneuver-row">
+              <Form.Item label="Differenz (m)" className="start-flight-altitude-field">
+                <InputNumber
+                  min={0}
+                  precision={0}
+                  value={details.altitudeDifferenceMeters ?? null}
+                  onChange={(value) => setDetails((currentDetails) => ({
+                    ...currentDetails,
+                    altitudeDifferenceMeters: typeof value === 'number' ? value : undefined,
+                  }))}
+                  style={{ width: '100%' }}
+                />
+              </Form.Item>
+              {showInlineAltitudeManeuvers ? (
+                <Form.Item label="Manöver" className="start-flight-maneuver-field">
+                  <ManeuverDropdown
+                    value={selectedManeuvers}
+                    onChange={handleManeuversChange}
+                  />
+                </Form.Item>
+              ) : null}
+            </div>
           </>
         ) : null}
 
         {maneuversEnabled ? (
           <>
-            <Form.Item label="Manöver">
-              <ManeuverDropdown
-                value={selectedManeuvers}
-                onChange={handleManeuversChange}
-              />
-            </Form.Item>
+            {!showInlineAltitudeManeuvers ? (
+              <Form.Item label="Manöver">
+                <ManeuverDropdown
+                  value={selectedManeuvers}
+                  onChange={handleManeuversChange}
+                />
+              </Form.Item>
+            ) : null}
             <div className="remarks-rating-grid flight-edit-rating-grid">
               {ratingKeys.map((ratingKey) => (
                 <Fragment key={ratingKey}>

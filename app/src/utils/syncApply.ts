@@ -20,6 +20,7 @@ type StudentPayload = {
   glider?: string;
   color?: string;
   totalFlights?: number;
+  totalAltitudeMeters?: number;
   flightSchool?: string;
   lastRatings?: Student['lastRatings'];
   photoDataUrl?: string | null;
@@ -114,6 +115,7 @@ const applyStudentUpsert = async (envelope: RelaySyncEnvelope): Promise<void> =>
       glider: payload.glider,
       color: payload.color,
       totalFlights: payload.totalFlights,
+      totalAltitudeMeters: payload.totalAltitudeMeters ?? 0,
       flightSchool: sanitizeFlightSchoolName(payload.flightSchool),
       lastRatings: payload.lastRatings,
       photoDataUrl: payload.photoDataUrl ?? undefined,
@@ -129,6 +131,7 @@ const applyStudentUpsert = async (envelope: RelaySyncEnvelope): Promise<void> =>
       glider: payload.glider ?? existingStudent.glider,
       color: payload.color ?? existingStudent.color,
       totalFlights: payload.totalFlights ?? existingStudent.totalFlights,
+      totalAltitudeMeters: payload.totalAltitudeMeters ?? existingStudent.totalAltitudeMeters ?? 0,
       flightSchool: sanitizeFlightSchoolName(payload.flightSchool ?? existingStudent.flightSchool),
       lastRatings: payload.lastRatings ?? existingStudent.lastRatings,
       photoDataUrl: hasPhotoDataUrl ? payload.photoDataUrl ?? undefined : existingStudent.photoDataUrl,

@@ -12,6 +12,7 @@ export type StudentFields = {
   glider: string;
   color: string;
   totalFlights: number;
+  totalAltitudeMeters: number;
   flightSchool: string;
   photoDataUrl?: string;
 };
@@ -205,6 +206,15 @@ const StudentForm = ({ value, flightSchoolOptions = [], onChange }: Props) => {
               min={0}
               value={value.totalFlights}
               onChange={(v) => onChange({ ...value, totalFlights: v ?? 0 })}
+              style={{ width: '100%' }}
+            />
+          </Form.Item>
+          <Form.Item label="Höhenmeter" className="student-form-item student-altitude-count-field">
+            <InputNumber
+              min={0}
+              precision={0}
+              value={value.totalAltitudeMeters ?? 0}
+              onChange={(v) => onChange({ ...value, totalAltitudeMeters: v ?? 0 })}
               style={{ width: '100%' }}
             />
           </Form.Item>

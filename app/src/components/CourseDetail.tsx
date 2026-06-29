@@ -12,6 +12,7 @@ import { getFlightDetailOptions, rememberFlightDetails } from '../utils/flightDe
 import { ALL_FLIGHT_SCHOOLS, extractFlightSchools, sanitizeFlightSchoolName } from '../utils/flightSchool';
 import { createId } from '../utils/idGenerator';
 import { buildRatings, hasSameRatings, normalizeRating } from '../utils/maneuverRatings';
+import { getAltitudeDifferenceMeters, getStudentTotalAltitudeMeters } from '../utils/altitudeMeters';
 import CourseHeader from './CourseHeader';
 import CourseSyncFooter from './CourseSyncFooter';
 import { ActiveStudentListItem, IdleStudentListItem, PendingStudentListItem } from './courseStudentList';
@@ -25,6 +26,7 @@ const createNewStudentDraft = (flightSchool: string): Student => ({
   glider: '',
   color: '',
   totalFlights: 0,
+  totalAltitudeMeters: 0,
   flightSchool,
 });
 
@@ -32,6 +34,14 @@ const createSyncNotification = (body: string, courseName?: string) => ({
   title: 'DigiKladde',
   body: courseName ? `${body} (${courseName})` : body,
 });
+
+const toLocalDayKey = (dateValue: Date | string): string => {
+  const date = typeof dateValue === 'string' ? new Date(dateValue) : dateValue;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 const hasSameManeuverSelection = (left: string[], right: string[]): boolean => {
   if (left.length !== right.length) return false;
@@ -115,7 +125,7 @@ const CourseDetail = () => {
   const [editStudent, setEditStudent] = useState<Student | null>(null);
   const [deleteMode, setDeleteMode] = useState(false);
   const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
-  const [nowTs, setNowTs] = useState(0);
+  const [nowTs, setNowTs] = useState(() => Date.now());
   const [remarksModalVisible, setRemarksModalVisible] = useState(false);
   const [selectedRemarkFlight, setSelectedRemarkFlight] = useState<{ flightId: number; studentName: string } | null>(null);
   const [existingRemarks, setExistingRemarks] = useState<string[]>([]);
@@ -200,9 +210,12 @@ const CourseDetail = () => {
         const student = await db.students.get(freshFlight.studentId);
         if (!student || !student.id) return;
 
+        const altitudeDifferenceMeters = getAltitudeDifferenceMeters(freshFlight.details);
         const newTotal = (student.totalFlights ?? 0) + 1;
+        const newTotalAltitudeMeters = getStudentTotalAltitudeMeters(student) + altitudeDifferenceMeters;
         await db.students.update(student.id, {
           totalFlights: newTotal,
+          totalAltitudeMeters: newTotalAltitudeMeters,
           updatedAt: finalizedAt,
           updatedByDeviceId: deviceId,
         });
@@ -215,6 +228,7 @@ const CourseDetail = () => {
             ? {
                 ...s,
                 totalFlights: newTotal,
+                totalAltitudeMeters: newTotalAltitudeMeters,
                 updatedAt: finalizedAt,
                 updatedByDeviceId: deviceId,
               }
@@ -257,6 +271,7 @@ const CourseDetail = () => {
               glider: finalizedStudent.glider,
               color: finalizedStudent.color,
               totalFlights: finalizedStudent.totalFlights,
+              totalAltitudeMeters: finalizedStudent.totalAltitudeMeters ?? 0,
               flightSchool: finalizedStudent.flightSchool,
               lastRatings: finalizedStudent.lastRatings,
               photoDataUrl: finalizedStudent.photoDataUrl ?? null,
@@ -428,6 +443,34 @@ const CourseDetail = () => {
     return hasRemarksMap;
   }, [flights]);
 
+  const flightsTodayByStudentId = useMemo(() => {
+    const todayKey = toLocalDayKey(new Date(nowTs));
+    const counts = new Map<number, number>();
+
+    flights.forEach((flight) => {
+      if (toLocalDayKey(flight.startTime) !== todayKey) return;
+      counts.set(flight.studentId, (counts.get(flight.studentId) ?? 0) + 1);
+    });
+
+    return counts;
+  }, [flights, nowTs]);
+
+  const completedFlightsTodayByStudentId = useMemo(() => {
+    const todayKey = toLocalDayKey(new Date(nowTs));
+    const counts = new Map<number, number>();
+
+    flights.forEach((flight) => {
+      if (!flight.endTime || toLocalDayKey(flight.startTime) !== todayKey) return;
+      counts.set(flight.studentId, (counts.get(flight.studentId) ?? 0) + 1);
+    });
+
+    return counts;
+  }, [flights, nowTs]);
+
+  const getFlightsBeforeToday = useCallback((student: Student) => (
+    Math.max(0, (student.totalFlights ?? 0) - (completedFlightsTodayByStudentId.get(student.id ?? -1) ?? 0))
+  ), [completedFlightsTodayByStudentId]);
+
   const effectiveFlightSchool = useMemo(() => {
     if (!course) {
       return sanitizeFlightSchoolName(activeFlightSchool);
@@ -538,6 +581,7 @@ const CourseDetail = () => {
         glider: student.glider,
         color: student.color,
         totalFlights: student.totalFlights,
+        totalAltitudeMeters: student.totalAltitudeMeters ?? 0,
         flightSchool: student.flightSchool,
         lastRatings: student.lastRatings,
         photoDataUrl: student.photoDataUrl ?? null,
@@ -559,6 +603,7 @@ const CourseDetail = () => {
       const normalizedStudent: Student = {
         ...student,
         syncId: studentSyncId,
+        totalAltitudeMeters: student.totalAltitudeMeters ?? 0,
         updatedAt: student.updatedAt ?? now,
         updatedByDeviceId: student.updatedByDeviceId ?? deviceId,
       };
@@ -566,6 +611,7 @@ const CourseDetail = () => {
       if (student.id) {
         await db.students.update(student.id, {
           syncId: normalizedStudent.syncId,
+          totalAltitudeMeters: normalizedStudent.totalAltitudeMeters,
           updatedAt: normalizedStudent.updatedAt,
           updatedByDeviceId: normalizedStudent.updatedByDeviceId,
         });
@@ -583,6 +629,7 @@ const CourseDetail = () => {
           glider: normalizedStudent.glider,
           color: normalizedStudent.color,
           totalFlights: normalizedStudent.totalFlights,
+          totalAltitudeMeters: normalizedStudent.totalAltitudeMeters ?? 0,
           flightSchool: normalizedStudent.flightSchool,
           lastRatings: normalizedStudent.lastRatings,
           photoDataUrl: normalizedStudent.photoDataUrl ?? null,
@@ -595,6 +642,7 @@ const CourseDetail = () => {
     if (addMode === 'new') {
       const studentToCreate: Student = {
         ...newStudent,
+        totalAltitudeMeters: newStudent.totalAltitudeMeters ?? 0,
         flightSchool: effectiveFlightSchool,
         syncId: createId('student'),
         updatedAt: now,
@@ -614,6 +662,7 @@ const CourseDetail = () => {
           glider: createdStudent.glider,
           color: createdStudent.color,
           totalFlights: createdStudent.totalFlights,
+          totalAltitudeMeters: createdStudent.totalAltitudeMeters ?? 0,
           flightSchool: createdStudent.flightSchool,
           lastRatings: createdStudent.lastRatings,
           photoDataUrl: createdStudent.photoDataUrl ?? null,
@@ -697,6 +746,7 @@ const CourseDetail = () => {
       glider: editStudent.glider,
       color: editStudent.color,
       totalFlights: editStudent.totalFlights,
+      totalAltitudeMeters: editStudent.totalAltitudeMeters ?? 0,
       flightSchool: sanitizeFlightSchoolName(editStudent.flightSchool),
       photoDataUrl: editStudent.photoDataUrl,
     });
@@ -705,6 +755,7 @@ const CourseDetail = () => {
         ? {
             ...editStudent,
             syncId: studentSyncId,
+            totalAltitudeMeters: editStudent.totalAltitudeMeters ?? 0,
             updatedAt: now,
             updatedByDeviceId: deviceId,
             flightSchool: sanitizeFlightSchoolName(editStudent.flightSchool),
@@ -724,6 +775,7 @@ const CourseDetail = () => {
         glider: editStudent.glider,
         color: editStudent.color,
         totalFlights: editStudent.totalFlights,
+        totalAltitudeMeters: editStudent.totalAltitudeMeters ?? 0,
         flightSchool: sanitizeFlightSchoolName(editStudent.flightSchool),
         lastRatings: editStudent.lastRatings,
         photoDataUrl: editStudent.photoDataUrl ?? null,
@@ -834,9 +886,12 @@ const CourseDetail = () => {
       const student = await db.students.get(flight.studentId);
       if (!student || !student.id) return;
 
+      const altitudeDifferenceMeters = getAltitudeDifferenceMeters(flight.details);
       const newTotal = (student.totalFlights ?? 0) + 1;
+      const newTotalAltitudeMeters = getStudentTotalAltitudeMeters(student) + altitudeDifferenceMeters;
       await db.students.update(student.id, {
         totalFlights: newTotal,
+        totalAltitudeMeters: newTotalAltitudeMeters,
         updatedAt: finalizedAt,
         updatedByDeviceId: deviceId,
       });
@@ -849,6 +904,7 @@ const CourseDetail = () => {
           ? {
               ...s,
               totalFlights: newTotal,
+              totalAltitudeMeters: newTotalAltitudeMeters,
               updatedAt: finalizedAt,
               updatedByDeviceId: deviceId,
             }
@@ -1314,6 +1370,8 @@ const CourseDetail = () => {
                       <ActiveStudentListItem
                         student={entry.student}
                         flight={entry.flight}
+                        flightsBeforeToday={getFlightsBeforeToday(entry.student)}
+                        flightsToday={flightsTodayByStudentId.get(entry.student.id ?? -1) ?? 0}
                         nowTs={nowTs}
                         onOpenRemarks={openRemarksModal}
                         onAbortFlight={(flightId) => {
@@ -1329,6 +1387,8 @@ const CourseDetail = () => {
                       <PendingStudentListItem
                         student={entry.student}
                         flight={entry.flight}
+                        flightsBeforeToday={getFlightsBeforeToday(entry.student)}
+                        flightsToday={flightsTodayByStudentId.get(entry.student.id ?? -1) ?? 0}
                         nowTs={nowTs}
                         onOpenRemarks={openRemarksModal}
                         onResumeFlight={(flightId) => {
@@ -1347,6 +1407,8 @@ const CourseDetail = () => {
                     return (
                       <IdleStudentListItem
                         student={entry.student}
+                        flightsBeforeToday={getFlightsBeforeToday(entry.student)}
+                        flightsToday={flightsTodayByStudentId.get(entry.student.id ?? -1) ?? 0}
                         deleteMode={deleteMode}
                         isSelected={isSelected}
                         showRemarksIndicator={showRemarksIndicator}

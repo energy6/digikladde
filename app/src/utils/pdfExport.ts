@@ -168,6 +168,7 @@ const buildDayGroups = (course: Course, flights: Flight[], locale?: string): Day
           glider: '-',
           color: '-',
           totalFlights: 0,
+          totalAltitudeMeters: 0,
           flightSchool: UNKNOWN_FLIGHT_SCHOOL,
         };
 

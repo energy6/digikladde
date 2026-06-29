@@ -12,6 +12,7 @@ import { createId } from '../utils/idGenerator';
 import { useLongPress } from '../utils/longPress';
 import { formatRatingLabels } from '../utils/maneuverRatings';
 import { generatePDF } from '../utils/pdfExport';
+import { getAltitudeDifferenceMeters, getCompletedFlightAltitudeMeters, getStudentTotalAltitudeMeters } from '../utils/altitudeMeters';
 import CourseHeader from './CourseHeader';
 import { FlightEditModal, type FlightEditValues } from './modals';
 
@@ -24,6 +25,7 @@ const renderFlightDetails = (details?: FlightDetails) => {
   if (details.terrain) rows.push(`Gelände: ${details.terrain} / ${details.teacher ?? '-'}`);
   if (details.startPlace) rows.push(`Startplatz: ${details.startPlace} / ${details.startTeacher ?? '-'}`);
   if (details.landPlace) rows.push(`Landeplatz: ${details.landPlace} / ${details.landTeacher ?? '-'}`);
+  if (getAltitudeDifferenceMeters(details) > 0) rows.push(`Höhendifferenz: ${getAltitudeDifferenceMeters(details)} m`);
 
   if (!rows.length) return null;
 
@@ -150,21 +152,24 @@ const CourseEvaluation = () => {
     return storedStudent?.syncId;
   }, [course?.students]);
 
-  const updateStudentTotalFlights = useCallback(async (
+  const updateStudentTotals = useCallback(async (
     courseId: number,
     studentId: number,
-    delta: number,
+    flightDelta: number,
+    altitudeDelta: number,
     now: string,
   ): Promise<Student | undefined> => {
     const storedStudent = await db.students.get(studentId);
     if (!storedStudent?.id) return undefined;
 
-    const nextTotalFlights = Math.max(0, (storedStudent.totalFlights ?? 0) + delta);
+    const nextTotalFlights = Math.max(0, (storedStudent.totalFlights ?? 0) + flightDelta);
+    const nextTotalAltitudeMeters = Math.max(0, getStudentTotalAltitudeMeters(storedStudent) + altitudeDelta);
     const studentSyncId = storedStudent.syncId ?? createId('student');
     const updatedStudent: Student = {
       ...storedStudent,
       syncId: studentSyncId,
       totalFlights: nextTotalFlights,
+      totalAltitudeMeters: nextTotalAltitudeMeters,
       updatedAt: now,
       updatedByDeviceId: deviceId,
     };
@@ -172,6 +177,7 @@ const CourseEvaluation = () => {
     await db.students.update(storedStudent.id, {
       syncId: studentSyncId,
       totalFlights: nextTotalFlights,
+      totalAltitudeMeters: nextTotalAltitudeMeters,
       updatedAt: now,
       updatedByDeviceId: deviceId,
     });
@@ -184,6 +190,7 @@ const CourseEvaluation = () => {
               ...student,
               syncId: student.syncId ?? studentSyncId,
               totalFlights: nextTotalFlights,
+              totalAltitudeMeters: nextTotalAltitudeMeters,
               updatedAt: now,
               updatedByDeviceId: deviceId,
             }
@@ -202,13 +209,14 @@ const CourseEvaluation = () => {
       courseId,
       operation: 'student_upsert',
       entitySyncId: student.syncId,
-      notification: createSyncNotification(`Fluganzahl von ${student.name} wurde aktualisiert.`, course?.name),
+      notification: createSyncNotification(`Flugstatistik von ${student.name} wurde aktualisiert.`, course?.name),
       payload: {
         syncId: student.syncId,
         name: student.name,
         glider: student.glider,
         color: student.color,
         totalFlights: student.totalFlights,
+        totalAltitudeMeters: student.totalAltitudeMeters ?? 0,
         flightSchool: student.flightSchool,
         lastRatings: student.lastRatings,
         photoDataUrl: student.photoDataUrl ?? null,
@@ -231,9 +239,13 @@ const CourseEvaluation = () => {
       const flightSyncId = existingFlight.syncId ?? createId('flight');
       const wasCompleted = Boolean(existingFlight.endTime);
       const willBeCompleted = Boolean(values.endTime);
-      const updatedStudent = wasCompleted === willBeCompleted
+      const existingAltitudeMeters = getCompletedFlightAltitudeMeters(existingFlight);
+      const nextAltitudeMeters = values.endTime ? getAltitudeDifferenceMeters(values.details) : 0;
+      const flightDelta = (willBeCompleted ? 1 : 0) - (wasCompleted ? 1 : 0);
+      const altitudeDelta = nextAltitudeMeters - existingAltitudeMeters;
+      const updatedStudent = flightDelta === 0 && altitudeDelta === 0
         ? undefined
-        : await updateStudentTotalFlights(courseId, existingFlight.studentId, willBeCompleted ? 1 : -1, now);
+        : await updateStudentTotals(courseId, existingFlight.studentId, flightDelta, altitudeDelta, now);
 
       const nextLandingFinalizedAt = values.endTime ? (values.landingFinalizedAt ?? now) : undefined;
       await db.flights.update(existingFlight.id, {
@@ -297,7 +309,7 @@ const CourseEvaluation = () => {
     resolveStudentSyncId,
     selectedFlight,
     selectedFlightStudent,
-    updateStudentTotalFlights,
+    updateStudentTotals,
   ]);
 
   const handleDeleteFlight = useCallback(async () => {
@@ -312,7 +324,7 @@ const CourseEvaluation = () => {
       const now = new Date().toISOString();
       const studentSyncId = await resolveStudentSyncId(existingFlight.studentId);
       const updatedStudent = existingFlight.endTime
-        ? await updateStudentTotalFlights(courseId, existingFlight.studentId, -1, now)
+        ? await updateStudentTotals(courseId, existingFlight.studentId, -1, -getCompletedFlightAltitudeMeters(existingFlight), now)
         : undefined;
 
       await db.flights.delete(existingFlight.id);
@@ -356,7 +368,7 @@ const CourseEvaluation = () => {
     resolveStudentSyncId,
     selectedFlight,
     selectedFlightStudent,
-    updateStudentTotalFlights,
+    updateStudentTotals,
   ]);
 
   if (!course || !id) {
@@ -404,7 +416,7 @@ const CourseEvaluation = () => {
                       items={[
                         {
                           key: String(student.id),
-                          label: `${student.name} (${studentFlights.length ?? 0} ${studentFlights.length === 1 ? 'Flug' : 'Flüge' })`,
+                          label: `${student.name} (${studentFlights.length ?? 0} ${studentFlights.length === 1 ? 'Flug' : 'Flüge' } / ${getStudentTotalAltitudeMeters(student)} hm)`,
                           children: studentFlights.length ? (
                             <Space orientation="vertical" size="small" style={{ width: '100%' }}>
                               {studentFlights.map((flight, idx) => (

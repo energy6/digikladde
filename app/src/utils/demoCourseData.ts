@@ -118,6 +118,7 @@ const buildStudents = (count: number, random: SeededRandom, seed: number): Stude
       glider: random.pick(gliders),
       color: random.pick(colors),
       totalFlights: random.int(0, 20),
+      totalAltitudeMeters: 0,
       flightSchool,
     });
   }
@@ -155,6 +156,7 @@ const buildFlights = (
               startTeacher: random.pick(teachers),
               landPlace: random.pick(['Landeplatz Nord', 'Landeplatz Tal', 'Landeplatz Wiese']),
               landTeacher: random.pick(teachers),
+              altitudeDifferenceMeters: random.pick([350, 420, 500, 650, 780]),
             }
           : {
               terrain: random.pick(terrains),
@@ -244,12 +246,18 @@ export const buildDemoCourseDataset = (options: DemoCourseOptions): DemoCourseDa
   const flights = buildFlights(courseId, students, options.days, random, options.courseType, options.seed);
 
   const courseFlightCountByStudentId = new Map<number, number>();
+  const courseAltitudeByStudentId = new Map<number, number>();
   for (const flight of flights) {
     courseFlightCountByStudentId.set(flight.studentId, (courseFlightCountByStudentId.get(flight.studentId) ?? 0) + 1);
+    courseAltitudeByStudentId.set(
+      flight.studentId,
+      (courseAltitudeByStudentId.get(flight.studentId) ?? 0) + (flight.details?.altitudeDifferenceMeters ?? 0),
+    );
   }
 
   for (const student of students) {
     student.totalFlights += courseFlightCountByStudentId.get(student.id ?? 0) ?? 0;
+    student.totalAltitudeMeters += courseAltitudeByStudentId.get(student.id ?? 0) ?? 0;
   }
 
   course.students = students;
@@ -292,6 +300,7 @@ export const buildDemoCourseSnapshot = (options: DemoCourseOptions, exportedAt =
         glider: student.glider,
         color: student.color,
         totalFlights: student.totalFlights,
+        totalAltitudeMeters: student.totalAltitudeMeters,
         flightSchool: student.flightSchool,
         lastRatings: student.lastRatings,
         photoDataUrl: student.photoDataUrl,

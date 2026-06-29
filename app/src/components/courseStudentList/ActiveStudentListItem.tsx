@@ -9,6 +9,8 @@ import StudentListItem from '../StudentListItem';
 type ActiveStudentListItemProps = {
   student: Student;
   flight: Flight;
+  flightsBeforeToday: number;
+  flightsToday: number;
   nowTs: number;
   onOpenRemarks: (flight: Flight, student: Student) => void;
   onAbortFlight: (flightId: number) => void;
@@ -18,6 +20,8 @@ type ActiveStudentListItemProps = {
 const ActiveStudentListItem = ({
   student,
   flight,
+  flightsBeforeToday,
+  flightsToday,
   nowTs,
   onOpenRemarks,
   onAbortFlight,
@@ -68,7 +72,13 @@ const ActiveStudentListItem = ({
         </Space>,
       ]}
     >
-      <StudentListItem student={student} flight={flight} nowTs={nowTs} />
+      <StudentListItem
+        student={student}
+        flight={flight}
+        flightsBeforeToday={flightsBeforeToday}
+        flightsToday={flightsToday}
+        nowTs={nowTs}
+      />
     </List.Item>
   );
 };

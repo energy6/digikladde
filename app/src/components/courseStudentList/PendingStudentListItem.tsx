@@ -9,6 +9,8 @@ import StudentListItem from '../StudentListItem';
 type PendingStudentListItemProps = {
   student: Student;
   flight: Flight;
+  flightsBeforeToday: number;
+  flightsToday: number;
   nowTs: number;
   onOpenRemarks: (flight: Flight, student: Student) => void;
   onResumeFlight: (flightId: number) => void;
@@ -18,6 +20,8 @@ type PendingStudentListItemProps = {
 const PendingStudentListItem = ({
   student,
   flight,
+  flightsBeforeToday,
+  flightsToday,
   nowTs,
   onOpenRemarks,
   onResumeFlight,
@@ -62,7 +66,13 @@ const PendingStudentListItem = ({
         </Space>,
       ]}
     >
-      <StudentListItem student={student} flight={flight} nowTs={nowTs} />
+      <StudentListItem
+        student={student}
+        flight={flight}
+        flightsBeforeToday={flightsBeforeToday}
+        flightsToday={flightsToday}
+        nowTs={nowTs}
+      />
     </List.Item>
   );
 };
