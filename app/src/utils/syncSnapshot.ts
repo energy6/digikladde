@@ -8,6 +8,16 @@ import type {
     Student,
 } from '../models/types';
 import { sanitizeFlightSchoolName } from './flightSchool';
+import {
+  chooseStartWinner,
+  deriveLandingPendingUntil,
+  flightLifecycleRank,
+  hasFinalizedFlightState,
+  hasPendingLandingState,
+  isDuplicateStartWindow,
+  isOpenFlight,
+  mergeManeuvers,
+} from './flightConflict';
 import { createId } from './idGenerator';
 import { isIncomingNewer } from './isIncomingNewer';
 
@@ -204,6 +214,100 @@ const upsertStudentBySyncId = async (
   return { ...existing, ...updates };
 };
 
+const readUpdatedAt = (value: unknown): string | undefined => (
+  typeof value === 'object' && value !== null && typeof (value as { updatedAt?: unknown }).updatedAt === 'string'
+    ? (value as { updatedAt: string }).updatedAt
+    : undefined
+);
+
+const hasNewerOrEqualFlightDelete = async (syncId: string, incomingUpdatedAt?: string): Promise<boolean> => {
+  const deleteEvents = await db.syncEvents
+    .where('entitySyncId')
+    .equals(syncId)
+    .filter((event) => event.operation === 'flight_delete')
+    .toArray();
+
+  return deleteEvents.some((event) => {
+    const deletedAt = readUpdatedAt(event.payload) ?? event.opTs;
+    if (!incomingUpdatedAt) return true;
+    return Date.parse(deletedAt) >= Date.parse(incomingUpdatedAt);
+  });
+};
+
+const chooseLaterIso = (left?: string, right?: string): string | undefined => {
+  if (!left) return right;
+  if (!right) return left;
+  return Date.parse(left) >= Date.parse(right) ? left : right;
+};
+
+const chooseEarlierIso = (left?: string, right?: string): string | undefined => {
+  if (!left) return right;
+  if (!right) return left;
+  return Date.parse(left) <= Date.parse(right) ? left : right;
+};
+
+const normalizeSnapshotFlightUpdates = (
+  incomingFlight: SharedFlightSnapshot,
+  existingFlight: Flight,
+  localCourseId: number,
+  studentId: number,
+): Partial<Flight> => {
+  const incomingRank = flightLifecycleRank(incomingFlight);
+  const existingRank = flightLifecycleRank(existingFlight);
+  const isRegression = incomingRank < existingRank;
+  const bothPending = existingRank === 2 && incomingRank === 2;
+  const earliestLandingMarkedAt = bothPending
+    ? chooseEarlierIso(existingFlight.landingMarkedAt, incomingFlight.landingMarkedAt)
+    : incomingFlight.landingMarkedAt ?? existingFlight.landingMarkedAt;
+
+  const updates: Partial<Flight> = {
+    updatedAt: chooseLaterIso(incomingFlight.updatedAt, existingFlight.updatedAt),
+    updatedByDeviceId: incomingFlight.updatedByDeviceId ?? existingFlight.updatedByDeviceId,
+    courseId: localCourseId,
+    studentId,
+    maneuvers: mergeManeuvers(existingFlight.maneuvers, incomingFlight.maneuvers),
+    ratings: incomingFlight.ratings,
+    remarks: incomingFlight.remarks ? [...incomingFlight.remarks] : undefined,
+    details: incomingFlight.details,
+    startTime: incomingFlight.startTime,
+  };
+
+  if (!isRegression || hasFinalizedFlightState(incomingFlight)) {
+    updates.endTime = incomingFlight.endTime;
+    updates.landingFinalizedAt = incomingFlight.landingFinalizedAt;
+  } else {
+    updates.endTime = existingFlight.endTime;
+    updates.landingFinalizedAt = existingFlight.landingFinalizedAt;
+  }
+
+  if (hasFinalizedFlightState(incomingFlight)) {
+    updates.landingMarkedAt = incomingFlight.landingMarkedAt ?? existingFlight.landingMarkedAt;
+    updates.landingPendingUntil = undefined;
+    return updates;
+  }
+
+  if (bothPending) {
+    updates.landingMarkedAt = earliestLandingMarkedAt;
+    updates.landingPendingUntil = deriveLandingPendingUntil(earliestLandingMarkedAt)
+      ?? chooseEarlierIso(existingFlight.landingPendingUntil, incomingFlight.landingPendingUntil);
+    updates.endTime = undefined;
+    updates.landingFinalizedAt = undefined;
+    return updates;
+  }
+
+  if (!isRegression && hasPendingLandingState(incomingFlight)) {
+    updates.landingMarkedAt = incomingFlight.landingMarkedAt;
+    updates.landingPendingUntil = incomingFlight.landingPendingUntil;
+    updates.endTime = undefined;
+    updates.landingFinalizedAt = undefined;
+    return updates;
+  }
+
+  updates.landingMarkedAt = existingFlight.landingMarkedAt;
+  updates.landingPendingUntil = existingFlight.landingPendingUntil;
+  return updates;
+};
+
 export const importCourseSnapshot = async (
   snapshot: CourseSyncSnapshot,
   deviceId = 'local-device',
@@ -211,7 +315,7 @@ export const importCourseSnapshot = async (
   const now = new Date().toISOString();
   const incomingCourse = snapshot.course;
 
-  return db.transaction('rw', db.courses, db.students, db.flights, async () => {
+  return db.transaction('rw', db.courses, db.students, db.flights, db.syncEvents, async () => {
     const studentMap = new Map<string, Student>();
 
     for (const student of incomingCourse.students) {
@@ -280,10 +384,66 @@ export const importCourseSnapshot = async (
     for (const incomingFlight of snapshot.flights) {
       const resolvedStudent = studentMap.get(incomingFlight.studentSyncId);
       if (!resolvedStudent?.id) continue;
+      if (await hasNewerOrEqualFlightDelete(incomingFlight.syncId, incomingFlight.updatedAt)) continue;
 
       const existingFlight = await db.flights.where('syncId').equals(incomingFlight.syncId).first();
 
       if (!existingFlight) {
+        const incomingInsert: Flight = {
+          syncId: incomingFlight.syncId,
+          updatedAt: incomingFlight.updatedAt ?? now,
+          updatedByDeviceId: incomingFlight.updatedByDeviceId ?? deviceId,
+          courseId: localCourseId,
+          studentId: resolvedStudent.id,
+          maneuvers: [...(incomingFlight.maneuvers ?? [])],
+          ratings: incomingFlight.ratings,
+          remarks: incomingFlight.remarks ? [...incomingFlight.remarks] : undefined,
+          details: incomingFlight.details,
+          startTime: incomingFlight.startTime,
+          landingMarkedAt: incomingFlight.landingMarkedAt,
+          landingPendingUntil: incomingFlight.landingPendingUntil,
+          landingFinalizedAt: incomingFlight.landingFinalizedAt,
+          endTime: incomingFlight.endTime,
+        };
+        const conflictFlights = isOpenFlight(incomingInsert)
+          ? (await db.flights.where('courseId').equals(localCourseId).toArray()).filter((flight) => (
+            flight.id
+            && flight.studentId === resolvedStudent.id
+            && flight.syncId !== incomingInsert.syncId
+            && isOpenFlight(flight)
+            && isDuplicateStartWindow(flight.startTime, incomingInsert.startTime)
+          ))
+          : [];
+
+        if (conflictFlights.length > 0) {
+          const candidates = [...conflictFlights, incomingInsert];
+          const winner = chooseStartWinner(candidates);
+          const mergedManeuvers = candidates.reduce<string[]>((current, candidate) => (
+            mergeManeuvers(current, candidate.maneuvers)
+          ), []);
+          const mergedUpdatedAt = candidates.reduce<string | undefined>((current, candidate) => (
+            chooseLaterIso(current, candidate.updatedAt)
+          ), winner?.updatedAt);
+
+          if (winner?.syncId === incomingInsert.syncId) {
+            await db.flights.add({
+              ...incomingInsert,
+              maneuvers: mergedManeuvers,
+              updatedAt: mergedUpdatedAt ?? incomingInsert.updatedAt,
+            });
+            await Promise.all(conflictFlights.map((flight) => (
+              flight.id ? db.flights.delete(flight.id) : Promise.resolve()
+            )));
+            importedFlights += 1;
+          } else if (winner?.id) {
+            await db.flights.update(winner.id, {
+              maneuvers: mergedManeuvers,
+              updatedAt: mergedUpdatedAt ?? winner.updatedAt,
+            });
+          }
+          continue;
+        }
+
         const insert: Flight = {
           syncId: incomingFlight.syncId,
           updatedAt: incomingFlight.updatedAt ?? now,
@@ -306,25 +466,17 @@ export const importCourseSnapshot = async (
         continue;
       }
 
-      if (!isIncomingNewer(incomingFlight.updatedAt, existingFlight.updatedAt)) {
+      const isProgressingLifecycle = flightLifecycleRank(incomingFlight) > flightLifecycleRank(existingFlight);
+      if (!isProgressingLifecycle && !isIncomingNewer(incomingFlight.updatedAt, existingFlight.updatedAt)) {
         continue;
       }
 
-      await db.flights.update(Number(existingFlight.id), {
-        updatedAt: incomingFlight.updatedAt ?? existingFlight.updatedAt,
-        updatedByDeviceId: incomingFlight.updatedByDeviceId ?? existingFlight.updatedByDeviceId,
-        courseId: localCourseId,
-        studentId: resolvedStudent.id,
-        maneuvers: [...(incomingFlight.maneuvers ?? [])],
-        ratings: incomingFlight.ratings,
-        remarks: incomingFlight.remarks ? [...incomingFlight.remarks] : undefined,
-        details: incomingFlight.details,
-        startTime: incomingFlight.startTime,
-        landingMarkedAt: incomingFlight.landingMarkedAt,
-        landingPendingUntil: incomingFlight.landingPendingUntil,
-        landingFinalizedAt: incomingFlight.landingFinalizedAt,
-        endTime: incomingFlight.endTime,
-      });
+      await db.flights.update(Number(existingFlight.id), normalizeSnapshotFlightUpdates(
+        incomingFlight,
+        existingFlight,
+        localCourseId,
+        resolvedStudent.id,
+      ));
       importedFlights += 1;
     }
 

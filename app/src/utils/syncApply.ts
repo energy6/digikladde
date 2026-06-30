@@ -1,5 +1,15 @@
 import { db } from '../db/database';
 import type { Course, Flight, RelaySyncEnvelope, Student } from '../models/types';
+import {
+  chooseStartWinner,
+  deriveLandingPendingUntil,
+  flightLifecycleRank,
+  hasFinalizedFlightState,
+  hasPendingLandingState,
+  isDuplicateStartWindow,
+  isOpenFlight,
+  mergeManeuvers,
+} from './flightConflict';
 import { sanitizeFlightSchoolName } from './flightSchool';
 import { isIncomingNewer } from './isIncomingNewer';
 
@@ -52,6 +62,113 @@ const hasOwnPayloadField = <T extends object>(payload: T, field: keyof T): boole
 const ensureCourseBySyncId = async (courseSyncId: string): Promise<Course | null> => {
   const existing = await db.courses.where('syncId').equals(courseSyncId).first();
   return existing ?? null;
+};
+
+const readUpdatedAt = (value: unknown): string | undefined => (
+  typeof value === 'object' && value !== null && typeof (value as { updatedAt?: unknown }).updatedAt === 'string'
+    ? (value as { updatedAt: string }).updatedAt
+    : undefined
+);
+
+const hasNewerOrEqualFlightDelete = async (syncId: string, incomingUpdatedAt?: string): Promise<boolean> => {
+  const deleteEvents = await db.syncEvents
+    .where('entitySyncId')
+    .equals(syncId)
+    .filter((event) => event.operation === 'flight_delete')
+    .toArray();
+
+  return deleteEvents.some((event) => {
+    const deletedAt = readUpdatedAt(event.payload) ?? event.opTs;
+    if (!incomingUpdatedAt) return true;
+    return Date.parse(deletedAt) >= Date.parse(incomingUpdatedAt);
+  });
+};
+
+const chooseEarlierIso = (left?: string | null, right?: string | null): string | undefined => {
+  if (!left) return right ?? undefined;
+  if (!right) return left;
+  return Date.parse(left) <= Date.parse(right) ? left : right;
+};
+
+const chooseLaterIso = (left?: string | null, right?: string | null): string | undefined => {
+  if (!left) return right ?? undefined;
+  if (!right) return left;
+  return Date.parse(left) >= Date.parse(right) ? left : right;
+};
+
+const normalizeSameFlightUpdates = (payload: FlightPayload, existing: Flight, courseId: number, resolvedStudentId?: number): Partial<Flight> => {
+  const incomingRank = flightLifecycleRank(payload);
+  const existingRank = flightLifecycleRank(existing);
+  const isLifecycleRegression = incomingRank < existingRank;
+  const hasIncomingFinalized = hasFinalizedFlightState(payload);
+  const hasIncomingPending = hasPendingLandingState(payload);
+  const bothPending = existingRank === 2 && incomingRank === 2;
+  const earliestLandingMarkedAt = bothPending
+    ? chooseEarlierIso(existing.landingMarkedAt, payload.landingMarkedAt)
+    : payload.landingMarkedAt ?? existing.landingMarkedAt;
+
+  const updates: Partial<Flight> = {
+    updatedAt: chooseLaterIso(payload.updatedAt, existing.updatedAt),
+    updatedByDeviceId: payload.updatedByDeviceId ?? existing.updatedByDeviceId,
+    courseId,
+    studentId: resolvedStudentId ?? existing.studentId,
+    maneuvers: hasOwnPayloadField(payload, 'maneuvers') ? mergeManeuvers(existing.maneuvers, payload.maneuvers) : existing.maneuvers,
+    ratings: hasOwnPayloadField(payload, 'ratings') ? payload.ratings ?? undefined : existing.ratings,
+    remarks: hasOwnPayloadField(payload, 'remarks') ? payload.remarks ? [...payload.remarks] : undefined : existing.remarks,
+    details: hasOwnPayloadField(payload, 'details') ? payload.details ?? undefined : existing.details,
+    startTime: payload.startTime ?? existing.startTime,
+  };
+
+  if (!isLifecycleRegression || hasIncomingFinalized) {
+    updates.endTime = hasOwnPayloadField(payload, 'endTime') ? payload.endTime ?? undefined : existing.endTime;
+    updates.landingFinalizedAt = hasOwnPayloadField(payload, 'landingFinalizedAt') ? payload.landingFinalizedAt ?? undefined : existing.landingFinalizedAt;
+  } else {
+    updates.endTime = existing.endTime;
+    updates.landingFinalizedAt = existing.landingFinalizedAt;
+  }
+
+  if (hasIncomingFinalized) {
+    updates.landingMarkedAt = hasOwnPayloadField(payload, 'landingMarkedAt') ? payload.landingMarkedAt ?? existing.landingMarkedAt : existing.landingMarkedAt;
+    updates.landingPendingUntil = undefined;
+    return updates;
+  }
+
+  if (bothPending) {
+    updates.landingMarkedAt = earliestLandingMarkedAt;
+    updates.landingPendingUntil = deriveLandingPendingUntil(earliestLandingMarkedAt)
+      ?? chooseEarlierIso(existing.landingPendingUntil, payload.landingPendingUntil);
+    updates.landingFinalizedAt = undefined;
+    updates.endTime = undefined;
+    return updates;
+  }
+
+  if (!isLifecycleRegression && hasIncomingPending) {
+    updates.landingMarkedAt = hasOwnPayloadField(payload, 'landingMarkedAt') ? payload.landingMarkedAt ?? undefined : existing.landingMarkedAt;
+    updates.landingPendingUntil = hasOwnPayloadField(payload, 'landingPendingUntil') ? payload.landingPendingUntil ?? undefined : existing.landingPendingUntil;
+    updates.landingFinalizedAt = undefined;
+    updates.endTime = undefined;
+    return updates;
+  }
+
+  updates.landingMarkedAt = existing.landingMarkedAt;
+  updates.landingPendingUntil = existing.landingPendingUntil;
+  return updates;
+};
+
+const findDuplicateOpenFlightConflicts = async (
+  courseId: number,
+  studentId: number,
+  incomingFlight: Pick<Flight, 'syncId' | 'startTime' | 'maneuvers' | 'endTime' | 'landingFinalizedAt'>,
+): Promise<Flight[]> => {
+  if (!isOpenFlight(incomingFlight)) return [];
+  const courseFlights = await db.flights.where('courseId').equals(courseId).toArray();
+  return courseFlights.filter((flight) => (
+    flight.id
+    && flight.studentId === studentId
+    && flight.syncId !== incomingFlight.syncId
+    && isOpenFlight(flight)
+    && isDuplicateStartWindow(flight.startTime, incomingFlight.startTime)
+  ));
 };
 
 const applyCourseUpsert = async (envelope: RelaySyncEnvelope): Promise<void> => {
@@ -186,6 +303,8 @@ const applyFlightUpsert = async (envelope: RelaySyncEnvelope): Promise<void> => 
   const syncId = payload.syncId;
   if (!syncId) return;
 
+  if (await hasNewerOrEqualFlightDelete(syncId, payload.updatedAt)) return;
+
   const course = await ensureCourseBySyncId(envelope.courseSyncId);
   if (!course?.id) return;
 
@@ -208,7 +327,7 @@ const applyFlightUpsert = async (envelope: RelaySyncEnvelope): Promise<void> => 
   if (!existing) {
     if (!resolvedStudentId || !payload.startTime) return;
 
-    await db.flights.add({
+    const incomingFlight: Flight = {
       syncId,
       updatedAt: payload.updatedAt,
       updatedByDeviceId: payload.updatedByDeviceId,
@@ -223,27 +342,51 @@ const applyFlightUpsert = async (envelope: RelaySyncEnvelope): Promise<void> => 
       landingPendingUntil: payload.landingPendingUntil ?? undefined,
       landingFinalizedAt: payload.landingFinalizedAt ?? undefined,
       endTime: payload.endTime ?? undefined,
-    });
+    };
+
+    const conflicts = await findDuplicateOpenFlightConflicts(course.id, resolvedStudentId, incomingFlight);
+    if (conflicts.length > 0) {
+      const candidates = [...conflicts, incomingFlight];
+      const winner = chooseStartWinner(candidates);
+      const mergedManeuvers = candidates.reduce<string[]>((current, candidate) => (
+        mergeManeuvers(current, candidate.maneuvers)
+      ), []);
+
+      if (winner?.syncId === incomingFlight.syncId) {
+        await db.flights.add({
+          ...incomingFlight,
+          maneuvers: mergedManeuvers,
+        });
+
+        await Promise.all(conflicts.map((conflict) => (
+          conflict.id ? db.flights.delete(conflict.id) : Promise.resolve()
+        )));
+        return;
+      }
+
+      if (winner?.id) {
+        await db.flights.update(winner.id, {
+          maneuvers: mergedManeuvers,
+          updatedAt: candidates.reduce<string | undefined>((current, candidate) => (
+            chooseLaterIso(current, candidate.updatedAt)
+          ), winner.updatedAt),
+          updatedByDeviceId: candidates
+            .slice()
+            .sort((a, b) => Date.parse(b.updatedAt ?? '') - Date.parse(a.updatedAt ?? ''))[0]?.updatedByDeviceId ?? winner.updatedByDeviceId,
+        });
+      }
+      return;
+    }
+
+    await db.flights.add(incomingFlight);
     return;
   }
 
-  if (!isIncomingNewer(payload.updatedAt, existing.updatedAt) || !existing.id) return;
+  if (!existing.id) return;
+  const isProgressingLifecycle = flightLifecycleRank(payload) > flightLifecycleRank(existing);
+  if (!isProgressingLifecycle && !isIncomingNewer(payload.updatedAt, existing.updatedAt)) return;
 
-  await db.flights.update(existing.id, {
-    updatedAt: payload.updatedAt ?? existing.updatedAt,
-    updatedByDeviceId: payload.updatedByDeviceId ?? existing.updatedByDeviceId,
-    courseId: course.id,
-    studentId: resolvedStudentId ?? existing.studentId,
-    maneuvers: hasOwnPayloadField(payload, 'maneuvers') ? [...(payload.maneuvers ?? [])] : existing.maneuvers,
-    ratings: hasOwnPayloadField(payload, 'ratings') ? payload.ratings ?? undefined : existing.ratings,
-    remarks: hasOwnPayloadField(payload, 'remarks') ? payload.remarks ? [...payload.remarks] : undefined : existing.remarks,
-    details: hasOwnPayloadField(payload, 'details') ? payload.details ?? undefined : existing.details,
-    startTime: payload.startTime ?? existing.startTime,
-    landingMarkedAt: hasOwnPayloadField(payload, 'landingMarkedAt') ? payload.landingMarkedAt ?? undefined : existing.landingMarkedAt,
-    landingPendingUntil: hasOwnPayloadField(payload, 'landingPendingUntil') ? payload.landingPendingUntil ?? undefined : existing.landingPendingUntil,
-    landingFinalizedAt: hasOwnPayloadField(payload, 'landingFinalizedAt') ? payload.landingFinalizedAt ?? undefined : existing.landingFinalizedAt,
-    endTime: hasOwnPayloadField(payload, 'endTime') ? payload.endTime ?? undefined : existing.endTime,
-  });
+  await db.flights.update(existing.id, normalizeSameFlightUpdates(payload, existing, course.id, resolvedStudentId));
 };
 
 const applyFlightDelete = async (envelope: RelaySyncEnvelope): Promise<void> => {
