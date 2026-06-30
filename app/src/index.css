@@ -158,6 +158,21 @@ a {
   width: 100%;
 }
 
+.start-flight-altitude-maneuver-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.start-flight-altitude-field {
+  flex: 0 0 96px;
+}
+
+.start-flight-maneuver-field {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 .remarks-grid-form-item .ant-form-item-control-input-content {
   width: 100%;
 }
@@ -384,7 +399,11 @@ a {
 }
 
 .student-flight-count-field {
-  flex: 0 0 128px;
+  flex: 0 0 48px;
+}
+
+.student-altitude-count-field {
+  flex: 0 0 72px;
 }
 
 .student-flight-school-field {
@@ -402,7 +421,11 @@ a {
   }
 
   .student-flight-count-field {
-    flex: 0 0 96px;
+    flex: 0 0 48px;
+  }
+
+  .student-altitude-count-field {
+    flex: 0 0 72px;
   }
 
   .student-flight-school-field {

@@ -1,7 +1,7 @@
 import { SwapOutlined } from '@ant-design/icons';
 import { faPlaneDeparture } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { AutoComplete, Button, Col, Form, Input, Modal, Row, Select, Space, Tooltip } from 'antd';
+import { AutoComplete, Button, Col, Form, Input, InputNumber, Modal, Row, Select, Space, Tooltip } from 'antd';
 import type { ReactNode } from 'react';
 import ManeuverDropdown from '../ManeuverDropdown';
 import type { Course, FlightDetails, Student } from '../../models/types';
@@ -62,6 +62,8 @@ const StartFlightModal = ({
   onSwapStartAndLandTeachers,
   onSelectedManeuversChange,
 }: StartFlightModalProps) => {
+  const showInlineAltitudeManeuvers = course.courseType === 'Höhenkurs' && maneuversEnabled;
+
   return (
     <Modal
       title={selectedFlightStudent ? `Flug starten: ${selectedFlightStudent.name}` : 'Flug starten'}
@@ -154,9 +156,32 @@ const StartFlightModal = ({
                 />
               </Col>
             </Row>
+            <div className="start-flight-altitude-maneuver-row">
+              <Form.Item label="Differenz (m)" className="start-flight-altitude-field">
+                <InputNumber
+                  min={0}
+                  precision={0}
+                  value={flightDetails.altitudeDifferenceMeters ?? null}
+                  onChange={(value) => onFlightDetailsChange({
+                    ...flightDetails,
+                    altitudeDifferenceMeters: typeof value === 'number' ? value : undefined,
+                  })}
+                  style={{ width: '100%' }}
+                />
+              </Form.Item>
+              {showInlineAltitudeManeuvers ? (
+                <Form.Item label="Manöver" className="start-flight-maneuver-field">
+                  <ManeuverDropdown
+                    value={selectedManeuvers}
+                    lastRatings={selectedFlightStudent?.lastRatings}
+                    onChange={onSelectedManeuversChange}
+                  />
+                </Form.Item>
+              ) : null}
+            </div>
           </>
         ) : null}
-        {maneuversEnabled ? (
+        {maneuversEnabled && !showInlineAltitudeManeuvers ? (
           <Form.Item label="Manöver">
             <ManeuverDropdown
               value={selectedManeuvers}

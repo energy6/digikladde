@@ -9,6 +9,8 @@ import StudentAvatar from '../StudentAvatar';
 
 type IdleStudentListItemProps = {
   student: Student;
+  flightsBeforeToday: number;
+  flightsToday: number;
   deleteMode: boolean;
   isSelected: boolean;
   showRemarksIndicator: boolean;
@@ -20,6 +22,8 @@ type IdleStudentListItemProps = {
 
 const IdleStudentListItem = ({
   student,
+  flightsBeforeToday,
+  flightsToday,
   deleteMode,
   isSelected,
   showRemarksIndicator,
@@ -94,7 +98,7 @@ const IdleStudentListItem = ({
         )}
         title={(
           <span>
-            {student.name} ({student.totalFlights ?? 0})
+            {student.name} ({flightsBeforeToday}+{flightsToday})
             {showRemarksIndicator ? (
               <FontAwesomeIcon
                 icon={faCircleExclamation}

@@ -7,10 +7,12 @@ import StudentAvatar from "./StudentAvatar";
 interface StudentListItemProps {
   student: Student;
   flight: Flight;
+  flightsBeforeToday: number;
+  flightsToday: number;
   nowTs: number;
 }
 
-const StudentListItem = ({student, flight, nowTs}: StudentListItemProps) => {
+const StudentListItem = ({student, flight, flightsBeforeToday, flightsToday, nowTs}: StudentListItemProps) => {
   const startTime = new Date(flight.startTime);
   const landingTime = flight.landingMarkedAt ? new Date(flight.landingMarkedAt) : null;
   const maneuverText = flight.maneuvers.map((maneuver) => formatRatingLabel(maneuver, student.lastRatings)).join(', ');
@@ -25,7 +27,7 @@ const StudentListItem = ({student, flight, nowTs}: StudentListItemProps) => {
           className="student-flight-avatar"
         />
       )}
-      title={<span className="student-flight-title">{student.name} ({student.totalFlights ?? 0})</span>}
+      title={<span className="student-flight-title">{student.name} ({flightsBeforeToday}+{flightsToday})</span>}
       description={<>
         <div className="student-flight-description">
           <div>{student.glider} — {student.color}</div>

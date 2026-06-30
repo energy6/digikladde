@@ -36,6 +36,7 @@ export interface Student extends SyncMetadata {
   glider: string;
   color: string;
   totalFlights: number;
+  totalAltitudeMeters: number;
   flightSchool: string;
   lastRatings?: ManeuverRatings;
   photoDataUrl?: string;
@@ -49,6 +50,7 @@ export interface FlightDetails {
   startTeacher?: string;  // Höhenkurs
   landPlace?: string;     // Höhenkurs
   landTeacher?: string;   // Höhenkurs
+  altitudeDifferenceMeters?: number; // Höhenkurs
 }
 
 export interface Flight extends SyncMetadata {
@@ -135,6 +137,7 @@ export interface SharedStudentSnapshot extends SyncMetadata {
   glider: string;
   color: string;
   totalFlights: number;
+  totalAltitudeMeters: number;
   flightSchool: string;
   lastRatings?: ManeuverRatings;
   photoDataUrl?: string;

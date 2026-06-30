@@ -1,5 +1,6 @@
 import { jsPDF as jsPDFNamed } from 'jspdf';
 import type { Course, CourseType, Flight, Student } from '../models/types';
+import { getAltitudeDifferenceMeters, getStudentTotalAltitudeMeters } from './altitudeMeters';
 import { durationFormatter } from './DatetimeFormatter';
 import { UNKNOWN_FLIGHT_SCHOOL } from './flightSchool';
 import { formatRatingLabels } from './maneuverRatings';
@@ -26,6 +27,8 @@ type StudentCourseStats = {
   name: string;
   flights: number;
   totalFlightsAfterCourse: number;
+  totalAltitudeMetersAfterCourse: number;
+  courseAltitudeMeters: number;
   totalFlightMinutes: number;
   ratings: string;
 };
@@ -168,6 +171,7 @@ const buildDayGroups = (course: Course, flights: Flight[], locale?: string): Day
           glider: '-',
           color: '-',
           totalFlights: 0,
+          totalAltitudeMeters: 0,
           flightSchool: UNKNOWN_FLIGHT_SCHOOL,
         };
 
@@ -240,6 +244,10 @@ export const createCoursePDFDoc = (
       const diffMinutes = Math.floor((new Date(flight.endTime).getTime() - new Date(flight.startTime).getTime()) / 60000);
       return diffMinutes > 0 ? sum + diffMinutes : sum;
     }, 0);
+    const courseAltitudeMeters = studentFlights.reduce(
+      (sum, flight) => sum + (flight.endTime ? getAltitudeDifferenceMeters(flight.details) : 0),
+      0,
+    );
 
     const maneuverSet = new Set<string>();
     studentFlights.forEach((flight) => {
@@ -253,6 +261,8 @@ export const createCoursePDFDoc = (
       name: student.name,
       flights: studentFlights.length,
       totalFlightsAfterCourse: student.totalFlights,
+      totalAltitudeMetersAfterCourse: getStudentTotalAltitudeMeters(student),
+      courseAltitudeMeters,
       totalFlightMinutes,
       ratings: formatRatingLabels(summaryManeuvers, student.lastRatings),
     };
@@ -267,6 +277,10 @@ export const createCoursePDFDoc = (
       const diffMinutes = Math.floor((new Date(flight.endTime).getTime() - new Date(flight.startTime).getTime()) / 60000);
       return diffMinutes > 0 ? sum + diffMinutes : sum;
     }, 0);
+    const courseAltitudeMeters = studentFlights.reduce(
+      (sum, flight) => sum + (flight.endTime ? getAltitudeDifferenceMeters(flight.details) : 0),
+      0,
+    );
 
     const maneuverSet = new Set<string>();
     studentFlights.forEach((flight) => {
@@ -283,6 +297,8 @@ export const createCoursePDFDoc = (
       name: knownStudent?.name ?? `Unbekannt #${studentId}`,
       flights: studentFlights.length,
       totalFlightsAfterCourse: knownStudent?.totalFlights ?? studentFlights.length,
+      totalAltitudeMetersAfterCourse: knownStudent ? getStudentTotalAltitudeMeters(knownStudent) : courseAltitudeMeters,
+      courseAltitudeMeters,
       totalFlightMinutes,
       ratings: formatRatingLabels(summaryManeuvers, knownStudent?.lastRatings ?? latestRatings),
     });
@@ -375,10 +391,10 @@ export const createCoursePDFDoc = (
   };
 
   const courseStatsColumns: TableColumn[] = [
-    { key: 'name', label: 'Name', width: 62 },
-    { key: 'flights', label: 'Flüge', width: 18 },
-    { key: 'flightTime', label: 'Flugzeit', width: 24 },
-    { key: 'ratings', label: 'Bewertung', width: 82 },
+    { key: 'name', label: 'Name', width: 54 },
+    { key: 'flights', label: 'Flüge', width: 24 },
+    { key: 'altitude', label: 'Höhenmeter', width: 24 },
+    { key: 'ratings', label: 'Bewertung', width: 84 },
   ];
 
   const drawCourseStatsHeader = () => {
@@ -401,22 +417,29 @@ export const createCoursePDFDoc = (
 
   const getCourseStatsRowMeta = (row: StudentCourseStats) => {
     const flightsText = `+${row.flights} (${row.totalFlightsAfterCourse})`;
+    const altitudeText = `+${row.courseAltitudeMeters} (${row.totalAltitudeMetersAfterCourse})`;
     const rowValues: Record<string, string> = {
       name: row.name,
       flights: flightsText,
-      flightTime: formatTotalMinutes(row.totalFlightMinutes),
+      altitude: altitudeText,
       ratings: row.ratings,
     };
+    const flightsColumn = courseStatsColumns.find((column) => column.key === 'flights');
+    const flightLines = [
+      fitCellText(doc, flightsText, (flightsColumn?.width ?? 24) - 2),
+      formatTotalMinutes(row.totalFlightMinutes),
+    ];
 
     const ratingsColumn = courseStatsColumns.find((column) => column.key === 'ratings');
     const maxRatingWidth = (ratingsColumn?.width ?? 80) - 2;
     const splitRaw = doc.splitTextToSize(rowValues.ratings, maxRatingWidth) as string | string[];
     const ratingLines = Array.isArray(splitRaw) ? splitRaw : [splitRaw];
     const ratingLineHeight = 3.2;
-    const rowHeight = Math.max(tableRowHeight, ratingLines.length * ratingLineHeight + 2.2);
+    const rowHeight = Math.max(tableRowHeight, ratingLines.length * ratingLineHeight + 2.2, flightLines.length * ratingLineHeight + 2.2);
 
     return {
       rowValues,
+      flightLines,
       ratingLines,
       ratingLineHeight,
       rowHeight,
@@ -435,6 +458,8 @@ export const createCoursePDFDoc = (
 
       if (column.key === 'ratings') {
         doc.text(rowMeta.ratingLines, x + 1, y + 3.4);
+      } else if (column.key === 'flights') {
+        doc.text(rowMeta.flightLines, x + 1, y + 3.4);
       } else {
         const text = fitCellText(doc, rowMeta.rowValues[column.key] ?? '-', column.width - 2);
         doc.text(text, x + 1, y + 3.7);
