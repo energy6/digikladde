@@ -11,6 +11,13 @@ import type { Course, Flight, FlightDetails, ManeuverRatings, Student } from '..
 import { getFlightDetailOptions, rememberFlightDetails } from '../utils/flightDetailHistory';
 import { ALL_FLIGHT_SCHOOLS, extractFlightSchools, sanitizeFlightSchoolName } from '../utils/flightSchool';
 import { createId } from '../utils/idGenerator';
+import {
+  deriveLandingPendingUntil,
+  isDuplicateStartWindow,
+  isOpenFlight,
+  LANDING_PENDING_MS,
+  mergeManeuvers,
+} from '../utils/flightConflict';
 import { buildRatings, hasSameRatings, normalizeRating } from '../utils/maneuverRatings';
 import CourseHeader from './CourseHeader';
 import CourseSyncFooter from './CourseSyncFooter';
@@ -18,8 +25,6 @@ import { ActiveStudentListItem, IdleStudentListItem, PendingStudentListItem } fr
 import { AddStudentModal, EditStudentModal, RemarksModal, StartFlightModal } from './modals';
 
 const { Text } = Typography;
-const LANDING_PENDING_MS = 5 * 60 * 1000;
-
 const createNewStudentDraft = (flightSchool: string): Student => ({
   name: '',
   glider: '',
@@ -644,30 +649,74 @@ const CourseDetail = () => {
       details: flightDetails,
       startTime: now,
     };
-    await db.flights.add(flight);
+    let flightToSync: Flight | undefined;
+    let reusedExistingFlight = false;
+
+    await db.transaction('rw', db.flights, db.courses, async () => {
+      const existingOpenFlights = (await db.flights.where('courseId').equals(courseId).toArray())
+        .filter((candidate) => candidate.id && candidate.studentId === selectedFlightStudent.id && isOpenFlight(candidate))
+        .sort((a, b) => Date.parse(a.startTime) - Date.parse(b.startTime));
+
+      const duplicateStart = existingOpenFlights.find((candidate) => (
+        isDuplicateStartWindow(candidate.startTime, flight.startTime)
+      ));
+
+      if (duplicateStart?.id) {
+        const mergedManeuvers = mergeManeuvers(duplicateStart.maneuvers, flight.maneuvers);
+        await db.flights.update(duplicateStart.id, {
+          maneuvers: mergedManeuvers,
+          updatedAt: now,
+          updatedByDeviceId: deviceId,
+        });
+        flightToSync = {
+          ...duplicateStart,
+          maneuvers: mergedManeuvers,
+          updatedAt: now,
+          updatedByDeviceId: deviceId,
+        };
+        reusedExistingFlight = true;
+        return;
+      }
+
+      if (existingOpenFlights.length > 0) {
+        reusedExistingFlight = true;
+        return;
+      }
+
+      const flightId = Number(await db.flights.add(flight));
+      flightToSync = { ...flight, id: flightId };
+    });
+
     await db.courses.update(courseId, { flightDefaults: flightDetails });
     rememberFlightDetails(effectiveFlightSchool, flightDetails);
 
-    await logCourseDelta({
-      courseId,
-      operation: 'flight_upsert',
-      entitySyncId: flight.syncId ?? createId('flight'),
-      notification: createSyncNotification(`${selectedFlightStudent.name} wurde gestartet.`, course?.name),
-      payload: {
-        syncId: flight.syncId,
-        studentSyncId,
-        studentId: flight.studentId,
-        maneuvers: flight.maneuvers,
-        details: flight.details,
-        startTime: flight.startTime,
-        landingMarkedAt: flight.landingMarkedAt,
-        landingPendingUntil: flight.landingPendingUntil,
-        landingFinalizedAt: flight.landingFinalizedAt,
-        endTime: flight.endTime,
-        updatedAt: flight.updatedAt,
-        updatedByDeviceId: flight.updatedByDeviceId,
-      },
-    });
+    if (flightToSync?.syncId) {
+      await logCourseDelta({
+        courseId,
+        operation: 'flight_upsert',
+        entitySyncId: flightToSync.syncId,
+        notification: createSyncNotification(
+          reusedExistingFlight
+            ? `${selectedFlightStudent.name} wurde aktualisiert.`
+            : `${selectedFlightStudent.name} wurde gestartet.`,
+          course?.name,
+        ),
+        payload: {
+          syncId: flightToSync.syncId,
+          studentSyncId,
+          studentId: flightToSync.studentId,
+          maneuvers: flightToSync.maneuvers,
+          details: flightToSync.details,
+          startTime: flightToSync.startTime,
+          landingMarkedAt: flightToSync.landingMarkedAt,
+          landingPendingUntil: flightToSync.landingPendingUntil,
+          landingFinalizedAt: flightToSync.landingFinalizedAt,
+          endTime: flightToSync.endTime,
+          updatedAt: flightToSync.updatedAt,
+          updatedByDeviceId: flightToSync.updatedByDeviceId,
+        },
+      });
+    }
 
     setStartModalVisible(false);
     setSelectedFlightStudent(null);
@@ -741,15 +790,34 @@ const CourseDetail = () => {
     if (!id) return;
     const now = Date.now();
     const nowIso = new Date(now).toISOString();
-    const pendingUntilIso = new Date(now + LANDING_PENDING_MS).toISOString();
-    await db.flights.update(flightId, {
-      updatedAt: nowIso,
-      updatedByDeviceId: deviceId,
-      landingMarkedAt: new Date(now).toISOString(),
-      landingPendingUntil: pendingUntilIso,
-      landingFinalizedAt: undefined,
+    let landedFlight: Flight | undefined;
+
+    await db.transaction('rw', db.flights, async () => {
+      const currentFlight = await db.flights.get(flightId);
+      if (!currentFlight || currentFlight.endTime || currentFlight.landingFinalizedAt) return;
+
+      const landingMarkedAt = currentFlight.landingMarkedAt && Date.parse(currentFlight.landingMarkedAt) <= now
+        ? currentFlight.landingMarkedAt
+        : nowIso;
+      const pendingUntilIso = deriveLandingPendingUntil(landingMarkedAt) ?? new Date(now + LANDING_PENDING_MS).toISOString();
+
+      await db.flights.update(flightId, {
+        updatedAt: nowIso,
+        updatedByDeviceId: deviceId,
+        landingMarkedAt,
+        landingPendingUntil: pendingUntilIso,
+        landingFinalizedAt: undefined,
+      });
+      landedFlight = {
+        ...currentFlight,
+        updatedAt: nowIso,
+        updatedByDeviceId: deviceId,
+        landingMarkedAt,
+        landingPendingUntil: pendingUntilIso,
+        landingFinalizedAt: undefined,
+      };
     });
-    const flight = await db.flights.get(flightId);
+    const flight = landedFlight;
     if (flight?.syncId) {
       const studentSyncId = await resolveStudentSyncId(flight.studentId);
       const studentName = course?.students.find((student) => student.id === flight.studentId)?.name ?? 'Ein Schüler';
@@ -762,8 +830,8 @@ const CourseDetail = () => {
           syncId: flight.syncId,
           studentSyncId,
           studentId: flight.studentId,
-          landingMarkedAt: nowIso,
-          landingPendingUntil: pendingUntilIso,
+          landingMarkedAt: flight.landingMarkedAt,
+          landingPendingUntil: flight.landingPendingUntil,
           landingFinalizedAt: null,
           updatedAt: nowIso,
           updatedByDeviceId: deviceId,
@@ -776,14 +844,28 @@ const CourseDetail = () => {
   const handleResumeFlight = async (flightId: number) => {
     if (!id) return;
     const now = new Date().toISOString();
-    await db.flights.update(flightId, {
-      updatedAt: now,
-      updatedByDeviceId: deviceId,
-      landingMarkedAt: undefined,
-      landingPendingUntil: undefined,
-      landingFinalizedAt: undefined,
+    let resumedFlight: Flight | undefined;
+    await db.transaction('rw', db.flights, async () => {
+      const currentFlight = await db.flights.get(flightId);
+      if (!currentFlight || currentFlight.endTime || currentFlight.landingFinalizedAt) return;
+
+      await db.flights.update(flightId, {
+        updatedAt: now,
+        updatedByDeviceId: deviceId,
+        landingMarkedAt: undefined,
+        landingPendingUntil: undefined,
+        landingFinalizedAt: undefined,
+      });
+      resumedFlight = {
+        ...currentFlight,
+        updatedAt: now,
+        updatedByDeviceId: deviceId,
+        landingMarkedAt: undefined,
+        landingPendingUntil: undefined,
+        landingFinalizedAt: undefined,
+      };
     });
-    const flight = await db.flights.get(flightId);
+    const flight = resumedFlight;
     if (flight?.syncId) {
       const studentSyncId = await resolveStudentSyncId(flight.studentId);
       const studentName = course?.students.find((student) => student.id === flight.studentId)?.name ?? 'Ein Schüler';
@@ -815,7 +897,7 @@ const CourseDetail = () => {
 
     await db.transaction('rw', db.flights, db.students, db.courses, async () => {
       const flight = await db.flights.get(flightId);
-      if (!flight || !flight.id || flight.landingFinalizedAt) return;
+      if (!flight || !flight.id || flight.endTime || flight.landingFinalizedAt) return;
 
       const finalizedAt = new Date().toISOString();
       const finalizedEndTime = flight.endTime ?? flight.landingMarkedAt ?? finalizedAt;
