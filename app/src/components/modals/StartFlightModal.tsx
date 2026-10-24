@@ -24,6 +24,7 @@ type StartFlightModalProps = {
 };
 
 type FlightDetailFieldProps = {
+  ariaLabel: string;
   label: ReactNode;
   value: string;
   options: string[];
@@ -34,9 +35,10 @@ const filterFlightDetailOption = (input: string, option?: { value?: string }) =>
   (option?.value ?? '').toLocaleLowerCase('de-DE').includes(input.toLocaleLowerCase('de-DE'))
 );
 
-const FlightDetailField = ({ label, value, options, onChange }: FlightDetailFieldProps) => (
+const FlightDetailField = ({ ariaLabel, label, value, options, onChange }: FlightDetailFieldProps) => (
   <Form.Item label={label}>
     <AutoComplete
+      aria-label={ariaLabel}
       value={value}
       options={options.map((option) => ({ value: option }))}
       showSearch={{ filterOption: filterFlightDetailOption }}
@@ -73,6 +75,7 @@ const StartFlightModal = ({
       okText={<FontAwesomeIcon icon={faPlaneDeparture} />}
       cancelButtonProps={{ style: { display: 'none' } }}
       okButtonProps={{
+        'aria-label': 'Start flight',
         style: { background: '#1f8f3a', borderColor: '#1f8f3a' },
       }}
     >
@@ -80,12 +83,14 @@ const StartFlightModal = ({
         {(course.courseType === 'Grundkurs' || course.courseType === 'Windenkurs') ? (
           <>
             <FlightDetailField
+              ariaLabel="Terrain"
               label="Gelände"
               value={flightDetails.terrain ?? ''}
               options={flightDetailOptions.terrain ?? []}
               onChange={(value) => onFlightDetailsChange({ ...flightDetails, terrain: value })}
             />
             <FlightDetailField
+              ariaLabel="Teacher"
               label="Lehrer"
               value={flightDetails.teacher ?? ''}
               options={flightDetailOptions.teacher ?? []}
@@ -112,6 +117,7 @@ const StartFlightModal = ({
               <Col span={12}>
                 <FlightDetailField
                   label="Startplatz"
+                  ariaLabel="Takeoff site"
                   value={flightDetails.startPlace ?? ''}
                   options={flightDetailOptions.startPlace ?? []}
                   onChange={(value) => onFlightDetailsChange({ ...flightDetails, startPlace: value })}
@@ -120,6 +126,7 @@ const StartFlightModal = ({
               <Col span={12}>
                 <FlightDetailField
                   label="Lehrer am Startplatz"
+                  ariaLabel="Takeoff teacher"
                   value={flightDetails.startTeacher ?? ''}
                   options={flightDetailOptions.startTeacher ?? []}
                   onChange={(value) => onFlightDetailsChange({ ...flightDetails, startTeacher: value })}
@@ -130,6 +137,7 @@ const StartFlightModal = ({
               <Col span={12}>
                 <FlightDetailField
                   label="Landeplatz"
+                  ariaLabel="Landing site"
                   value={flightDetails.landPlace ?? ''}
                   options={flightDetailOptions.landPlace ?? []}
                   onChange={(value) => onFlightDetailsChange({ ...flightDetails, landPlace: value })}
@@ -150,6 +158,7 @@ const StartFlightModal = ({
                       </Tooltip>
                     </Space>
                   )}
+                  ariaLabel="Landing teacher"
                   value={flightDetails.landTeacher ?? ''}
                   options={flightDetailOptions.landTeacher ?? []}
                   onChange={(value) => onFlightDetailsChange({ ...flightDetails, landTeacher: value })}
@@ -161,6 +170,7 @@ const StartFlightModal = ({
                 start-flight-altitude-field
               ">
                 <InputNumber
+                  aria-label="Altitude difference (m)"
                   min={0}
                   precision={0}
                   value={flightDetails.altitudeDifferenceMeters ?? null}

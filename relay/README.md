@@ -25,6 +25,23 @@ Relay defaults:
 - HTTP health: `http://127.0.0.1:8080/health`
 - WebSocket: `ws://127.0.0.1:8080/relay`
 
+## Unit tests
+
+From the repository root:
+
+```bash
+npm run test:relay
+```
+
+The node:test suite covers queue delivery/ACKs, deduplication, retention, session
+isolation, rate limits, buffer limits and configuration. Time boundaries use
+explicit timestamps rather than real waiting. Configuration cases run in isolated
+processes, independent of the caller's relay environment variables.
+
+`npm run test:e2e` additionally starts a real local relay and tests course sharing
+and flight recording between two browser contexts. See
+[Development](../DEVELOPMENT.md#automatisierte-tests) for setup and diagnostics.
+
 ## Smoke test
 
 Start relay first, then:
@@ -67,11 +84,30 @@ docker run --rm -p 8080:8080 digikladde-relay:local
 
 ### GHCR publish
 
-The repository contains the workflow `.github/workflows/publish-relay-image.yml`.
+The integrated workflow `.github/workflows/ci.yml` has separate app build, relay
+build, publishing, deployment, E2E and cleanup jobs.
 
-- On push to `main` (with changes under `relay/**`) it publishes to GHCR.
-- On version tags (`v*`) it publishes a tagged image.
-- On pull requests it only validates that the Docker image builds.
+The relay job also archives a `linux/amd64` Docker image for the E2E runner,
+using the same Dockerfile and build cache as the multiarch publish. E2E loads
+this artifact rather than rebuilding the relay or pulling a mutable GHCR tag.
+Both GHCR publishing and GitHub Pages deployment require successful E2E tests.
+Failed, cancelled or skipped build/E2E jobs prevent either publication.
+
+- Only runs on `main` publish to GHCR, with both the `main` and `latest` tags
+  pointing to the same image.
+- PRs (including forks) and other branches pass images to E2E as artifacts,
+  without registry credentials. Local image tags derive from the PR number
+  (`pr-123`) or sanitized branch name.
+- Manual runs follow the same rules; there is no `docker-push` switch.
+- After publishing, cleanup retains only the current image tagged `main` and
+  `latest` and its referenced platform/attestation manifests. Old tags and
+  unreferenced versions are removed.
+- PR closure does not trigger cleanup because PRs do not publish GHCR images.
+  Cleanup only runs after successful publishing.
+
+The repository needs admin access to this GHCR package under **Manage Actions
+access** for deletion using `GITHUB_TOKEN`. Registry authorization errors fail
+the cleanup explicitly. See [Development](../DEVELOPMENT.md#ghcr-cleanup).
 
 Image name:
 
@@ -82,7 +118,7 @@ ghcr.io/<github-org-or-user>/digikladde-relay
 Pull example:
 
 ```bash
-docker pull ghcr.io/<github-org-or-user>/digikladde-relay:latest
+docker pull ghcr.io/<github-org-or-user>/digikladde-relay:main
 ```
 
 ## Environment variables

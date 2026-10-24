@@ -11,6 +11,11 @@
     "relay"
   ],
   "scripts": {
+    "test": "npm run test:app && npm run test:relay",
+    "test:app": "npm run -w app test --",
+    "test:relay": "npm run -w relay test --",
+    "test:e2e": "npm run -w app test:e2e --",
+    "typecheck:tests": "npm run -w app typecheck:tests",
     "dev:app": "npm run -w app dev",
     "lint": "npm run lint:app && npm run lint:relay",
     "lint:app": "npm run -w app lint",

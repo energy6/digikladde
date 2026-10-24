@@ -1,0 +1,215 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  app:
+    name: Build app
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: package.json
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run lint:app
+      - run: npm run test:app
+      - run: npm run typecheck:tests
+      - run: npm run build:app
+      - name: Archive app build for E2E
+        uses: actions/upload-artifact@v6
+        with:
+          name: app-dist
+          path: app/dist/
+          if-no-files-found: error
+          retention-days: 1
+      - name: Upload Pages artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: app/dist
+
+  relay:
+    name: Build relay image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: package.json
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run lint:relay
+      - run: npm run typecheck:relay
+      - run: npm run test:relay
+      - run: npm run build:relay
+      - name: Archive relay bundle for publishing
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v6
+        with:
+          name: relay-dist
+          path: relay/dist/
+          if-no-files-found: error
+          retention-days: 1
+      - uses: docker/setup-buildx-action@v4
+      - name: Derive image tag from PR or branch
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: digikladde-relay
+          flavor: latest=false
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+      - name: Build relay image for E2E
+        uses: docker/build-push-action@v7
+        with:
+          context: ./relay
+          file: ./relay/Dockerfile
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=docker,dest=${{ runner.temp }}/relay-image.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Archive relay image for E2E
+        uses: actions/upload-artifact@v6
+        with:
+          name: relay-image
+          path: ${{ runner.temp }}/relay-image.tar
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  e2e:
+    name: Chromium with build artifacts
+    needs: [app, relay]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download app build
+        uses: actions/download-artifact@v8
+        with:
+          name: app-dist
+          path: app/dist/
+      - name: Download relay image
+        uses: actions/download-artifact@v8
+        with:
+          name: relay-image
+          path: ${{ runner.temp }}/relay-image/
+      - name: Load relay image
+        run: docker load --input "$RUNNER_TEMP/relay-image/relay-image.tar"
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: package.json
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm exec -w app -- playwright install --with-deps chromium
+      - run: npm run test:e2e
+        env:
+          E2E_USE_BUILD_ARTIFACTS: 'true'
+          E2E_APP_BASE_PATH: /${{ github.event.repository.name }}/
+          E2E_RELAY_IMAGE: ${{ needs.relay.outputs.image-tag }}
+      - name: Clean up relay container
+        if: ${{ always() }}
+        run: docker ps -aq --filter 'name=^/digikladde-relay-e2e$' | xargs --no-run-if-empty docker rm --force
+      - name: Upload browser report and failure traces
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-results
+          path: |
+            app/playwright-report/
+            app/test-results/
+          retention-days: 7
+
+  publish-relay:
+    name: Publish main relay image
+    needs: [relay, e2e]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    concurrency:
+      group: ghcr-${{ github.repository }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: relay-dist
+          path: relay/dist/
+      - name: Compute image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/digikladde-relay" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish multiarch main image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./relay
+          file: ./relay/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ steps.image.outputs.name }}:main
+            ${{ steps.image.outputs.name }}:latest
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1.2.2
+        with:
+          package: digikladde-relay
+          delete-tags: '*'
+          exclude-tags: main,latest
+          delete-untagged: true
+
+  deploy:
+    name: Deploy app
+    needs: [app, e2e]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v6
+      - uses: actions/deploy-pages@v5
+        id: deployment

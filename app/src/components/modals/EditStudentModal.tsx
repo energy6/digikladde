@@ -27,6 +27,7 @@ const EditStudentModal = ({
       open={open}
       onCancel={onCancel}
       onOk={onOk}
+      okButtonProps={{ 'aria-label': 'Save student' }}
       okText={<FontAwesomeIcon icon={faFloppyDisk} />}
       cancelButtonProps={{ style: { display: 'none' } }}
     >

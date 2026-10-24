@@ -39,6 +39,7 @@ const ManeuverDropdown = ({ value, lastRatings, onChange }: ManeuverDropdownProp
       )}
     >
       <button
+        aria-label="Select maneuvers"
         type="button"
         className="maneuver-dropdown-trigger"
         aria-expanded={open}

@@ -202,6 +202,7 @@ const CourseSyncFooter = ({ course }: Props) => {
             )}
             <Tooltip title="Kurs teilen und QR-Code anzeigen">
               <Button
+                aria-label="Share course"
                 icon={<LinkOutlined />}
                 type={ isSharedCourse ? 'default': 'primary' }
                 onClick={() => void handleShareCourse()}
@@ -227,6 +228,7 @@ const CourseSyncFooter = ({ course }: Props) => {
               </Button>
             ) : (
               <Input
+                aria-label="Invitation link"
                 readOnly
                 value={shareLink}
                 onFocus={(event) => event.target.select()}

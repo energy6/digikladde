@@ -409,7 +409,7 @@ const CourseForm = ({
             onClick={() => void handleSave()}
             loading={saving}
             disabled={sharedCourseLoading}
-            aria-label="Kurs speichern"
+            aria-label="Save course"
             title="Kurs speichern"
           />,
         ].filter(Boolean)}
@@ -433,24 +433,24 @@ const CourseForm = ({
                     filterOption: (input, option) => (option?.value ?? '').toLocaleLowerCase('de-DE').includes(input.toLocaleLowerCase('de-DE')),
                   }}
                 >
-                  <Input placeholder="Flugschule eingeben oder auswählen" />
+                  <Input aria-label="Flight school" placeholder="Flugschule eingeben oder auswählen" />
                 </AutoComplete>
               </Form.Item>
               <Form.Item name="name" label={<>Name <span style={{ color: '#ff4d4f' }}>*</span></>} style={{ marginBottom: 8 }}>
-                <Input />
+                <Input aria-label="Course name" />
               </Form.Item>
               <Form.Item name="courseType" label={<>Kursart <span style={{ color: '#ff4d4f' }}>*</span></>} style={{ marginBottom: 8 }}>
-                <Select options={courseTypes.map((type) => ({ label: type, value: type }))} style={{ width: '100%' }} />
+                <Select aria-label="Course type" options={courseTypes.map((type) => ({ label: type, value: type }))} style={{ width: '100%' }} />
               </Form.Item>
               <Row gutter={8}>
                 <Col span={12}>
                   <Form.Item name="startDate" label={<>Startdatum <span style={{ color: '#ff4d4f' }}>*</span></>} style={{ marginBottom: 8 }}>
-                    <Input type="date" />
+                    <Input aria-label="Course start date" type="date" />
                   </Form.Item>
                 </Col>
                 <Col span={12}>
                   <Form.Item name="endDate" label={<>Enddatum <span style={{ color: '#ff4d4f' }}>*</span></>} style={{ marginBottom: 8 }}>
-                    <Input type="date" />
+                    <Input aria-label="Course end date" type="date" />
                   </Form.Item>
                 </Col>
               </Row>

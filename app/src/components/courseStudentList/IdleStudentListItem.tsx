@@ -78,6 +78,7 @@ const IdleStudentListItem = ({
       actions={deleteMode ? [] : [
         <Space orientation="horizontal" size="small" align="center">
           <Button
+            aria-label={`Start flight: ${student.name}`}
             type="primary"
             icon={<FontAwesomeIcon icon={faPlaneDeparture} />}
             onClick={() => {

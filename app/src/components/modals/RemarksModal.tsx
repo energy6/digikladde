@@ -72,6 +72,7 @@ const RemarksModal = ({
             type={isListening ? 'primary' : 'default'}
           />
           <Button
+            aria-label="Save remarks and ratings"
             type="primary"
             style={{ background: '#1f8f3a', borderColor: '#1f8f3a' }}
             onClick={onSave}
@@ -100,6 +101,7 @@ const RemarksModal = ({
 
         <Form.Item style={{ marginBottom: 0, display: remarksReadOnly ? 'none' : 'block' }}>
           <Input.TextArea
+            aria-label="Flight remarks"
             rows={4}
             value={newRemark}
             onChange={(event) => onNewRemarkChange(event.target.value)}
@@ -142,6 +144,7 @@ const RemarksModal = ({
                   }}
                 >
                   <Slider
+                    ariaLabelForHandle={`Rating: ${ratingKey === 'Start' ? 'Takeoff' : ratingKey === 'Landung' ? 'Landing' : ratingKey}`}
                     min={0}
                     max={10}
                     step={1}

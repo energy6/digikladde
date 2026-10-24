@@ -294,7 +294,7 @@ const CourseList = () => {
                       title="Kursbackup importieren"
                     />
                   </Upload>
-                  <Button type="primary" icon={<FontAwesomeIcon icon={faCirclePlus} />} onClick={() => setCreateModalOpen(true)} />
+                  <Button aria-label="Create course" type="primary" icon={<FontAwesomeIcon icon={faCirclePlus} />} onClick={() => setCreateModalOpen(true)} />
                 </>
               )}
             </Space>
