@@ -72,7 +72,8 @@ export const addStudent = async (page: Page, name: string) => {
   await page.getByRole('button', { name: 'Add student', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Schüler hinzufügen', exact: true });
   await dialog.getByRole('combobox', { name: 'Select student' }).click();
-  await page.getByText('Neuer Schüler', { exact: true }).click();
+  await expect(page.getByText('Neuer Schüler', { exact: true })).toBeVisible();
+  await dialog.getByRole('combobox', { name: 'Select student' }).press('Enter');
   await dialog.getByRole('textbox', { name: 'Student name', exact: true }).fill(name);
   await dialog.getByRole('textbox', { name: 'Glider', exact: true }).fill('Alpha');
   await dialog.getByRole('textbox', { name: 'Color', exact: true }).fill('Blau');
@@ -95,6 +96,7 @@ export const shareCourse = async (start: Page, landing: Page) => {
   await landing.getByRole('main').getByRole('heading', { level: 3 }).click();
   await expect(studentRow(landing, 'Anna')).toBeVisible();
   await expect(studentRow(landing, 'Ben')).toBeVisible();
+  return link;
 };
 
 export const chooseManeuver = async (page: Page, dialog: Locator, maneuver: string) => {
@@ -141,7 +143,7 @@ export const openEvaluation = async (page: Page) => {
   await page.getByRole('button', { name: 'Anna (1 Flug / 850 hm)', exact: true }).click();
 };
 
-export const readRecords = async (page: Page, table: 'students' | 'courses' | 'flights') => (
+export const readRecords = async (page: Page, table: 'students' | 'courses' | 'flights' | 'roomKeys' | 'shareSessions' | 'receivedMessages') => (
   page.evaluate((tableName) => new Promise<unknown>((resolve, reject) => {
     const open = indexedDB.open('DigiKladdeDB');
     open.onerror = () => reject(new Error('Could not open test database', { cause: open.error }));

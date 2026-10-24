@@ -1,17 +1,21 @@
 import { expect, it } from 'vitest';
+import { randomSecret } from './e2eCrypto';
 import { parseJoinInvite } from './parseJoinInvite';
 
-it('parses shared JSON and legacy invitations', () => {
-  const expected = { roomId: 'room', joinSecret: 'secret', courseSyncId: 'course' };
-  expect(parseJoinInvite(JSON.stringify({ type: 'digikladde_join', version: 1, roomId: ' room ', joinSecret: ' secret ', courseSyncId: 'course' }))).toEqual(expected);
-  expect(parseJoinInvite('roomId=room\njoinSecret=secret\ncourseSyncId=course')).toEqual(expected);
-  const link = new URL('http://127.0.0.1:4173/');
-  link.searchParams.set('joinInvite', JSON.stringify({ type: 'digikladde_join', version: 1, ...expected }));
-  expect(parseJoinInvite(link.searchParams.get('joinInvite')!)).toEqual(expected);
+it('parses only V2 fragment links and QR payloads without HTTP query secrets', () => {
+  const inviteId = randomSecret();
+  const key = randomSecret();
+  const link = new URL('https://example.test/digikladde/');
+  link.hash = new URLSearchParams({ v: '2', invite: inviteId, key }).toString();
+  expect(link.search).toBe('');
+  expect(parseJoinInvite(link.toString())).toEqual({ version: 2, inviteId, key });
+  expect(parseJoinInvite(link.hash)).toEqual({ version: 2, inviteId, key });
 });
 
-it.each(['', '{', 'https://example.com', '{"type":"other"}', '{"type":"digikladde_join","roomId":"room"}'])(
-  'rejects incomplete or malformed invitation %s', (input) => {
-    expect(parseJoinInvite(input)).toBeNull();
-  },
-);
+it.each([
+  '', '{', 'https://example.com', '{"type":"digikladde_join","version":1,"roomId":"room","joinSecret":"secret"}',
+  'roomId=room\njoinSecret=secret', '#v=1&invite=id&key=key',
+  '#v=2&invite=short&key=short',
+])('rejects malformed and legacy invitation %s', (input) => {
+  expect(parseJoinInvite(input)).toBeNull();
+});

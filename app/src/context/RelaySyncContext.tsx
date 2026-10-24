@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { message } from 'antd';
 import { db } from '../db/database';
 import type {
   Course,
@@ -11,12 +12,14 @@ import type {
   SyncNotification,
   SyncOperationType,
 } from '../models/types';
-import { createId, createJoinSecret } from '../utils/idGenerator';
-import { applyRemoteDeltaEnvelope } from '../utils/syncApply';
+import { createId } from '../utils/idGenerator';
 import { ingestRemoteDeltaEvent, listCourseDeltaEvents, listRoomDeltaEvents, logLocalDeltaEvent } from '../utils/syncEvents';
 import { exportCourseSnapshot, importCourseSnapshot } from '../utils/syncSnapshot';
 import { getExistingPushSubscription, registerPushNotifications } from '../utils/pushNotifications';
-import { isCourseSyncSnapshot, isRelaySyncEnvelope } from '../utils/typeGuards';
+import { assertMessageSize, isRecord, MAX_PUSH_BYTES, MAX_SYNC_BYTES, randomSecret, type EncryptedBox } from '../utils/e2eCrypto';
+import { getRoomKey, replayId, sealRoomMessage, type RoomKey } from '../utils/roomKeys';
+import { applyProtectedSync, openRoomMessage } from '../utils/protectedSync';
+import { createInvitation } from '../utils/invitations';
 
 type StartShareSessionInput = {
   courseId: number;
@@ -26,6 +29,7 @@ type JoinShareSessionInput = {
   courseId: number;
   roomId: string;
   joinSecret: string;
+  roomKey: RoomKey;
 };
 
 type LogLocalDeltaInput = {
@@ -51,6 +55,7 @@ type RelaySyncContextValue = {
   relayBaseUrl: string;
   startShareSession: (input: StartShareSessionInput) => Promise<ShareSession>;
   joinShareSession: (input: JoinShareSessionInput) => Promise<ShareSession>;
+  createJoinInvitation: (courseId: number, baseUrl: string) => Promise<string>;
   updateShareSessionState: (courseSyncId: string, state: ShareSessionState) => Promise<void>;
   touchShareSession: (courseSyncId: string) => Promise<void>;
   leaveShareSession: (courseSyncId: string) => Promise<void>;
@@ -81,7 +86,7 @@ type RelaySyncProviderProps = {
 const DEVICE_ID_STORAGE_KEY = 'digikladde.deviceId';
 
 type RelayMessage = {
-  version: 1;
+  version: 2;
   type: string;
   roomId?: string;
   deviceId?: string;
@@ -89,14 +94,6 @@ type RelayMessage = {
   seq?: number;
   targetDeviceId?: string;
   payload?: Record<string, unknown>;
-};
-
-type QueuedRelayMessage = {
-  seq: number;
-  ts: number;
-  fromDeviceId: string;
-  type: 'sync_response';
-  payload: Record<string, unknown>;
 };
 
 const MAX_RECONNECT_ATTEMPTS = 5;
@@ -114,7 +111,12 @@ type ConnectionState = {
   processing: boolean;
   reconnectAttempts: number;
   reconnectTimer?: ReturnType<typeof setTimeout>;
+  ticketRefreshTimer?: ReturnType<typeof setTimeout>;
+  joinTimer: ReturnType<typeof setTimeout>;
   intentionalClose: boolean;
+  ready: Promise<void>;
+  resolveReady: () => void;
+  rejectReady: (error: Error) => void;
 };
 
 const RelaySyncContext = createContext<RelaySyncContextValue | null>(null);
@@ -267,13 +269,19 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl, pushNotifi
   const startShareSession = useCallback(async ({ courseId }: StartShareSessionInput): Promise<ShareSession> => {
     const { courseSyncId } = await ensureCourseSyncId(courseId);
     const existing = await db.shareSessions.where('courseSyncId').equals(courseSyncId).first();
+    const roomId = existing?.roomId ?? randomSecret();
+    if (!existing) {
+      await db.roomKeys.add({ roomId, courseSyncId, secret: randomSecret(), epoch: randomSecret(), sentCount: 0 });
+    } else {
+      await getRoomKey(roomId);
+    }
 
     const now = new Date().toISOString();
 
     return persistSession({
       courseSyncId,
-      roomId: existing?.roomId ?? createId('room'),
-      joinSecret: existing?.joinSecret ?? createJoinSecret(),
+      roomId,
+      joinSecret: existing?.joinSecret ?? randomSecret(),
       relayBaseUrl: normalizedRelayBaseUrl,
       deviceId,
       username,
@@ -283,8 +291,12 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl, pushNotifi
     });
   }, [deviceId, normalizedRelayBaseUrl, persistSession, username]);
 
-  const joinShareSession = useCallback(async ({ courseId, roomId, joinSecret }: JoinShareSessionInput): Promise<ShareSession> => {
+  const joinShareSession = useCallback(async ({ courseId, roomId, joinSecret, roomKey }: JoinShareSessionInput): Promise<ShareSession> => {
     const { courseSyncId } = await ensureCourseSyncId(courseId);
+    latestSnapshotImportRef.current.delete(courseId);
+    if (roomKey.roomId !== roomId || roomKey.courseSyncId !== courseSyncId) throw new Error('Einladung gehört nicht zum Kurs.');
+    const localKey = await db.roomKeys.get(roomId);
+    await db.roomKeys.put(localKey?.secret === roomKey.secret && localKey.epoch === roomKey.epoch ? localKey : roomKey);
     const now = new Date().toISOString();
 
     return persistSession({
@@ -320,22 +332,43 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl, pushNotifi
     });
   }, []);
 
-  const updateRelayQueueCursor = useCallback(async (courseSyncId: string, lastRelayQueueSeq: number): Promise<void> => {
-    const existing = await db.shareSessions.where('courseSyncId').equals(courseSyncId).first();
-    if (!existing?.id) return;
+  const sendPushUnsubscribeOverConnection = useCallback((connection: ConnectionState): void => {
+    if (connection.ws.readyState !== WebSocket.OPEN || !connection.ticket) return;
+    connection.ws.send(JSON.stringify({
+      version: 2, type: 'push_unsubscribe', roomId: connection.roomId, deviceId,
+      ticket: connection.ticket, seq: connection.seq++,
+    }));
+  }, [deviceId]);
 
-    await db.shareSessions.update(existing.id, {
-      lastRelayQueueSeq,
-      lastSyncedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    });
+  const closeCourseConnection = useCallback((connection: ConnectionState): void => {
+    connection.intentionalClose = true;
+    clearTimeout(connection.joinTimer);
+    clearTimeout(connection.reconnectTimer);
+    clearTimeout(connection.ticketRefreshTimer);
+    connection.messageQueue.length = 0;
+    connection.rejectReady(new DOMException('Raumverbindung bewusst beendet.', 'AbortError'));
+    if (connectionsRef.current.get(connection.courseSyncId) === connection) {
+      connectionsRef.current.delete(connection.courseSyncId);
+    }
+    if (connection.ws.readyState === WebSocket.OPEN || connection.ws.readyState === WebSocket.CONNECTING) {
+      connection.ws.close(1000, 'session_disconnect');
+    }
   }, []);
 
   const leaveShareSession = useCallback(async (courseSyncId: string): Promise<void> => {
     const existing = await db.shareSessions.where('courseSyncId').equals(courseSyncId).first();
     if (!existing?.id) return;
-    await db.shareSessions.delete(existing.id);
-  }, []);
+    const connection = connectionsRef.current.get(courseSyncId);
+    if (connection) {
+      sendPushUnsubscribeOverConnection(connection);
+      closeCourseConnection(connection);
+    }
+    await db.transaction('rw', db.shareSessions, db.roomKeys, db.receivedMessages, async () => {
+      await db.shareSessions.delete(existing.id);
+      await db.roomKeys.delete(existing.roomId);
+      await db.receivedMessages.where('roomId').equals(existing.roomId).delete();
+    });
+  }, [closeCourseConnection, sendPushUnsubscribeOverConnection]);
 
   const getShareSession = useCallback(async (courseSyncId: string): Promise<ShareSession | undefined> => {
     return db.shareSessions.where('courseSyncId').equals(courseSyncId).first();
@@ -366,7 +399,7 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl, pushNotifi
     if (connection.ws.readyState !== WebSocket.OPEN || !connection.ticket) return 0;
 
     const events = (await listCourseDeltaEvents(connection.courseSyncId))
-      .filter((event) => event.deviceId === deviceId && !event.sentToRelayAt);
+      .filter((event) => event.roomId === connection.roomId && event.deviceId === deviceId && !event.sentToRelayAt);
     let sentCount = 0;
 
     for (const event of events) {
@@ -385,20 +418,26 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl, pushNotifi
         notification: event.notification,
       };
 
-      const message: RelayMessage = {
-        version: 1,
+      const box = await sealRoomMessage(connection.roomId, deviceId, 'delta', relayEnvelope, event.opId);
+      let push: EncryptedBox | undefined;
+      if (event.notification) {
+        push = await sealRoomMessage(connection.roomId, deviceId, 'push', event.notification, event.opId);
+        if (new TextEncoder().encode(JSON.stringify(push)).byteLength > MAX_PUSH_BYTES) {
+          push = undefined;
+          message.warning('Push-Details sind zu groß. Es wird nur ein allgemeiner Hinweis gesendet.');
+        }
+      }
+      const outbound: RelayMessage = {
+        version: 2,
         type: 'sync_response',
         roomId: connection.roomId,
         deviceId,
         ticket: connection.ticket,
         seq: connection.seq++,
-        payload: {
-          kind: 'delta',
-          envelope: relayEnvelope,
-        },
+        payload: { box, ...(push ? { push } : {}) },
       };
-
-      connection.ws.send(JSON.stringify(message));
+      assertMessageSize(outbound, MAX_SYNC_BYTES);
+      connection.ws.send(JSON.stringify(outbound));
       connection.sentOpIds.add(event.opId);
       if (event.id) {
         await db.syncEvents.update(event.id, { sentToRelayAt: new Date().toISOString() });
@@ -430,11 +469,14 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl, pushNotifi
 
     const connection = connectionsRef.current.get(courseSyncId);
     if (connection) {
-      void sendDeltaEventsOverConnection(connection);
+      void sendDeltaEventsOverConnection(connection).catch(() => {
+        void updateShareSessionState(courseSyncId, 'error');
+        message.error('Verschlüsselte Änderungen konnten nicht gesendet werden.');
+      });
     }
 
     return event;
-  }, [deviceId, sendDeltaEventsOverConnection]);
+  }, [deviceId, sendDeltaEventsOverConnection, updateShareSessionState]);
 
   const ingestRemoteDelta = useCallback(async (envelope: RelaySyncEnvelope) => {
     return ingestRemoteDeltaEvent(envelope);
@@ -459,7 +501,7 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl, pushNotifi
     if (connection.ws.readyState !== WebSocket.OPEN || !connection.ticket) return;
 
     const message: RelayMessage = {
-      version: 1,
+      version: 2,
       type: 'push_subscribe',
       roomId: connection.roomId,
       deviceId,
@@ -479,21 +521,6 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl, pushNotifi
         updatedAt: new Date().toISOString(),
       });
     }
-  }, [deviceId]);
-
-  const sendPushUnsubscribeOverConnection = useCallback((connection: ConnectionState): void => {
-    if (connection.ws.readyState !== WebSocket.OPEN || !connection.ticket) return;
-
-    const message: RelayMessage = {
-      version: 1,
-      type: 'push_unsubscribe',
-      roomId: connection.roomId,
-      deviceId,
-      ticket: connection.ticket,
-      seq: connection.seq++,
-    };
-
-    connection.ws.send(JSON.stringify(message));
   }, [deviceId]);
 
   const registerPushForConnection = useCallback(async (connection: ConnectionState): Promise<void> => {
@@ -517,33 +544,11 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl, pushNotifi
 
   const disconnectCourseSession = useCallback(async (courseId: number): Promise<void> => {
     const { courseSyncId } = await ensureCourseSyncId(courseId);
-    let connection = connectionsRef.current.get(courseSyncId);
-
-    // Fallback: find connection by courseId if syncId changed after snapshot import
-    if (!connection) {
-      for (const conn of connectionsRef.current.values()) {
-        if (conn.courseId === courseId) {
-          connection = conn;
-          break;
-        }
-      }
-    }
-
+    const connection = connectionsRef.current.get(courseSyncId);
     if (!connection) return;
-
-    connection.intentionalClose = true;
-    if (connection.reconnectTimer) {
-      clearTimeout(connection.reconnectTimer);
-      connection.reconnectTimer = undefined;
-    }
-
-    connectionsRef.current.delete(connection.courseSyncId);
-    if (connection.ws.readyState === WebSocket.OPEN || connection.ws.readyState === WebSocket.CONNECTING) {
-      connection.ws.close(1000, 'session_disconnect');
-    }
-
+    closeCourseConnection(connection);
     await updateShareSessionState(connection.courseSyncId, 'idle');
-  }, [updateShareSessionState]);
+  }, [closeCourseConnection, updateShareSessionState]);
 
   const connectCourseSession = useCallback(async (courseId: number): Promise<void> => {
     const { courseSyncId } = await ensureCourseSyncId(courseId);
@@ -552,17 +557,24 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl, pushNotifi
     if (!session) {
       throw new Error('Keine Share-Session für diesen Kurs vorhanden.');
     }
+    await getRoomKey(session.roomId);
 
     const existingConnection = connectionsRef.current.get(courseSyncId);
     if (existingConnection && (existingConnection.ws.readyState === WebSocket.OPEN || existingConnection.ws.readyState === WebSocket.CONNECTING)) {
-      return;
+      return existingConnection.ready;
     }
-
-    await updateShareSessionState(courseSyncId, 'connecting');
+    if (existingConnection) closeCourseConnection(existingConnection);
 
     const wsUrl = toRelayWebSocketUrl(session.relayBaseUrl || normalizedRelayBaseUrl);
     const ws = new WebSocket(wsUrl);
 
+    let resolveReady: () => void = () => {};
+    let rejectReady: (error: Error) => void = () => {};
+    const ready = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
+    const joinTimeout = setTimeout(() => {
+      rejectReady(new Error('Zeitüberschreitung beim sicheren Raumbeitritt.'));
+      ws.close(1000, 'join_timeout');
+    }, 15000);
     const connection: ConnectionState = {
       courseId,
       courseSyncId,
@@ -574,21 +586,27 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl, pushNotifi
       processing: false,
       reconnectAttempts: existingConnection?.reconnectAttempts ?? 0,
       intentionalClose: false,
+      ready, resolveReady, rejectReady, joinTimer: joinTimeout,
     };
 
     connectionsRef.current.set(courseSyncId, connection);
+    const isCurrent = () => connectionsRef.current.get(courseSyncId) === connection && !connection.intentionalClose;
+    const connectingState = updateShareSessionState(courseSyncId, 'connecting');
 
     const processQueue = async () => {
       if (connection.processing) return;
       connection.processing = true;
 
-      while (connection.messageQueue.length > 0) {
+      while (isCurrent() && connection.messageQueue.length > 0) {
         const task = connection.messageQueue.shift();
         if (task) {
           try {
             await task();
           } catch {
-            // Swallow errors in queued message handlers to avoid blocking the queue.
+            if (!isCurrent()) break;
+            closeCourseConnection(connection);
+            await updateShareSessionState(connection.courseSyncId, 'error');
+            message.error('Sync-Nachricht konnte nicht sicher verarbeitet werden. Bitte erneut synchronisieren.');
           }
         }
       }
@@ -602,10 +620,10 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl, pushNotifi
     };
 
     const handleWsOpen = () => {
-      connection.reconnectAttempts = 0;
+      if (!isCurrent()) return;
 
       const joinMessage: RelayMessage = {
-        version: 1,
+        version: 2,
         type: 'join_request',
         roomId: session.roomId,
         deviceId,
@@ -620,153 +638,118 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl, pushNotifi
       ws.send(JSON.stringify(joinMessage));
     };
 
+    const scheduleTicketRefresh = (incoming: RelayMessage) => {
+      if (connection.ticketRefreshTimer) clearTimeout(connection.ticketRefreshTimer);
+      const expiresAt = incoming.payload?.ticketExpiresAt;
+      const serverTime = incoming.payload?.serverTime;
+      if (typeof expiresAt !== 'number' || typeof serverTime !== 'number' || expiresAt <= serverTime) {
+        enqueue(() => Promise.reject(new Error('Ungültige Ticket-Laufzeit.')));
+        return false;
+      }
+      connection.ticketRefreshTimer = setTimeout(() => {
+        if (!isCurrent() || ws.readyState !== WebSocket.OPEN) return;
+        ws.send(JSON.stringify({
+          version: 2, type: 'ticket_refresh', roomId: session.roomId, deviceId,
+          ticket: connection.ticket, seq: connection.seq++,
+        }));
+      }, Math.max(1000, (expiresAt - serverTime) / 2));
+      return true;
+    };
+
     const handleJoinOk = (incoming: RelayMessage) => {
+      if (typeof incoming.ticket !== 'string' || incoming.roomId !== session.roomId || incoming.deviceId !== deviceId) {
+        enqueue(() => Promise.reject(new Error('Ungültige Beitrittsbestätigung.')));
+        return;
+      }
+      clearTimeout(joinTimeout);
+      connection.reconnectAttempts = 0;
       connection.ticket = incoming.ticket;
+      if (!scheduleTicketRefresh(incoming)) return;
+      connection.resolveReady();
       void updateShareSessionState(courseSyncId, 'connected');
 
       const catchupRequest: RelayMessage = {
-        version: 1,
+        version: 2,
         type: 'catchup_request',
         roomId: session.roomId,
         deviceId,
         ticket: connection.ticket,
         seq: connection.seq++,
         payload: {
-          afterSeq: session.lastRelayQueueSeq ?? 0,
-        },
-      };
-
-      const syncRequest: RelayMessage = {
-        version: 1,
-        type: 'sync_request',
-        roomId: session.roomId,
-        deviceId,
-        ticket: connection.ticket,
-        seq: connection.seq++,
-        payload: {
-          mode: 'snapshot_request',
-          courseSyncId,
+          afterSeq: 0,
         },
       };
 
       ws.send(JSON.stringify(catchupRequest));
-      ws.send(JSON.stringify(syncRequest));
-      void sendDeltaEventsOverConnection(connection);
-
-      void registerPushForConnection(connection);
+      enqueue(async () => {
+        const syncRequest: RelayMessage = {
+          version: 2, type: 'sync_request', roomId: session.roomId, deviceId,
+          ticket: connection.ticket, seq: connection.seq++,
+          payload: { box: await sealRoomMessage(session.roomId, deviceId, 'snapshot_request', { mode: 'snapshot_request' }) },
+        };
+        ws.send(JSON.stringify(syncRequest));
+        await sendDeltaEventsOverConnection(connection);
+        await registerPushForConnection(connection);
+      });
     };
 
     const handleSyncRequest = (incoming: RelayMessage) => {
-      const mode = typeof incoming.payload?.mode === 'string' ? incoming.payload.mode : '';
-      if (mode !== 'snapshot_request' || !connection.ticket) return;
-
       enqueue(async () => {
+        if (!connection.ticket || !incoming.deviceId) throw new Error('Nicht autorisierte Sync-Anfrage.');
+        const { box, value } = await openRoomMessage(session.roomId, incoming.payload?.box, 'snapshot_request', incoming.deviceId);
+        if (!isRecord(value) || value.mode !== 'snapshot_request') throw new Error('Ungültige Snapshot-Anfrage.');
+        const id = replayId(box);
+        const fresh = await db.transaction('rw', db.receivedMessages, async () => {
+          if (await db.receivedMessages.get(id)) return false;
+          await db.receivedMessages.add({ id, roomId: session.roomId });
+          return true;
+        });
+        if (!fresh) return;
         const snapshot = await exportCourseSnapshot(courseId, session.roomId, deviceId);
         const response: RelayMessage = {
-          version: 1,
+          version: 2,
           type: 'sync_response',
           roomId: session.roomId,
           deviceId,
           ticket: connection.ticket,
           seq: connection.seq++,
           targetDeviceId: incoming.deviceId,
-          payload: {
-            kind: 'snapshot',
-            snapshot,
-          },
+          payload: { box: await sealRoomMessage(session.roomId, deviceId, 'snapshot', snapshot) },
         };
+        assertMessageSize(response, MAX_SYNC_BYTES);
         ws.send(JSON.stringify(response));
         await touchShareSession(connection.courseSyncId);
       });
     };
 
-    const handleSnapshotResponse = (incoming: RelayMessage) => {
-      const snapshot = incoming.payload?.snapshot;
-      if (!isCourseSyncSnapshot(snapshot)) return;
-
+    const handleSyncResponse = (incoming: RelayMessage) => {
       enqueue(async () => {
-        const imported = await importCourseSnapshot(snapshot, deviceId);
-        const importedCourse = await db.courses.get(imported.courseId);
-        const importedCourseSyncId = importedCourse?.syncId;
-
-        if (importedCourseSyncId && importedCourseSyncId !== connection.courseSyncId) {
-          const existingSession = await db.shareSessions.where('courseSyncId').equals(connection.courseSyncId).first();
-          if (existingSession?.id) {
-            await db.shareSessions.update(existingSession.id, {
-              courseSyncId: importedCourseSyncId,
-              updatedAt: new Date().toISOString(),
-            });
-          }
-
-          connectionsRef.current.delete(connection.courseSyncId);
-          connection.courseSyncId = importedCourseSyncId;
-          connectionsRef.current.set(importedCourseSyncId, connection);
-        }
-
+        if (!incoming.deviceId) throw new Error('Absender fehlt.');
+        const imported = await applyProtectedSync(session.roomId, incoming.payload?.box, deviceId, incoming.deviceId);
         await touchShareSession(connection.courseSyncId);
-        emitSnapshotImport(connection.courseId, imported.courseId);
+        if (imported.snapshot) emitSnapshotImport(connection.courseId, imported.courseId);
         emitCourseChange(imported.courseId);
-      });
-    };
-
-    const handleDeltaResponse = (incoming: RelayMessage) => {
-      const envelope = incoming.payload?.envelope;
-      if (!isRelaySyncEnvelope(envelope)) return;
-
-      enqueue(async () => {
-        const result = await ingestRemoteDeltaEvent(envelope);
-        if (result.accepted) {
-          await applyRemoteDeltaEnvelope(envelope);
-          await touchShareSession(connection.courseSyncId);
-
-          const localCourse = await db.courses.where('syncId').equals(envelope.courseSyncId).first();
-          if (localCourse?.id) {
-            emitCourseChange(localCourse.id);
-          }
-        }
       });
     };
 
     const handleCatchupResponse = (incoming: RelayMessage) => {
       const messages = incoming.payload?.messages;
-      if (!Array.isArray(messages) || !connection.ticket) return;
-
-      const queuedMessages = messages.filter((message): message is QueuedRelayMessage => (
-        typeof message === 'object'
-        && message !== null
-        && typeof (message as QueuedRelayMessage).seq === 'number'
-        && (message as QueuedRelayMessage).type === 'sync_response'
-        && typeof (message as QueuedRelayMessage).payload === 'object'
-        && (message as QueuedRelayMessage).payload !== null
-      ));
-
-      if (queuedMessages.length === 0) return;
-
       enqueue(async () => {
-        let highestAppliedSeq = session.lastRelayQueueSeq ?? 0;
-
-        for (const queuedMessage of queuedMessages) {
-          const envelope = queuedMessage.payload.envelope;
-          if (!isRelaySyncEnvelope(envelope)) {
-            highestAppliedSeq = Math.max(highestAppliedSeq, queuedMessage.seq);
-            continue;
-          }
-
-          const result = await ingestRemoteDeltaEvent(envelope);
-          if (result.accepted) {
-            await applyRemoteDeltaEnvelope(envelope);
-
-            const localCourse = await db.courses.where('syncId').equals(envelope.courseSyncId).first();
-            if (localCourse?.id) {
-              emitCourseChange(localCourse.id);
-            }
-          }
-
-          highestAppliedSeq = Math.max(highestAppliedSeq, queuedMessage.seq);
+        if (!Array.isArray(messages) || !connection.ticket) throw new Error('Ungültige Catch-up-Antwort.');
+        // Relay queues restart at one after a restart; persistent message IDs provide replay protection.
+        let highestAppliedSeq = 0;
+        for (const queuedMessage of messages) {
+          if (!isRecord(queuedMessage) || !Number.isSafeInteger(queuedMessage.seq)
+            || typeof queuedMessage.seq !== 'number' || queuedMessage.seq <= highestAppliedSeq
+            || queuedMessage.type !== 'sync_response' || !isRecord(queuedMessage.payload)
+            || typeof queuedMessage.fromDeviceId !== 'string') throw new Error('Ungültige Catch-up-Nachricht.');
+          const result = await applyProtectedSync(session.roomId, queuedMessage.payload.box, deviceId, queuedMessage.fromDeviceId);
+          emitCourseChange(result.courseId);
+          highestAppliedSeq = queuedMessage.seq;
         }
-
+        if (highestAppliedSeq === 0) return;
         const ackMessage: RelayMessage = {
-          version: 1,
+          version: 2,
           type: 'catchup_ack',
           roomId: connection.roomId,
           deviceId,
@@ -778,61 +761,78 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl, pushNotifi
         };
 
         ws.send(JSON.stringify(ackMessage));
-        await updateRelayQueueCursor(connection.courseSyncId, highestAppliedSeq);
         await touchShareSession(connection.courseSyncId);
       });
     };
 
     const handleWsMessage = (event: MessageEvent) => {
+      if (!isCurrent()) return;
       let incoming: RelayMessage;
 
       try {
         incoming = JSON.parse(String(event.data)) as RelayMessage;
       } catch {
+        enqueue(() => Promise.reject(new Error('Ungültige Relay-Nachricht.')));
+        return;
+      }
+      if (!isRecord(incoming) || incoming.version !== 2) {
+        enqueue(() => Promise.reject(new Error('Veraltetes Relay-Protokoll.')));
         return;
       }
 
       if (incoming.type === 'ticket_refresh' && incoming.ticket) {
         connection.ticket = incoming.ticket;
+        scheduleTicketRefresh(incoming);
         return;
       }
 
       if (incoming.type === 'join_ok') { handleJoinOk(incoming); return; }
-      if (incoming.type === 'join_denied' || incoming.type === 'error') { void updateShareSessionState(courseSyncId, 'error'); return; }
+      if (incoming.type === 'join_denied' || incoming.type === 'error') {
+        connection.rejectReady(new Error('Sicherer Raumbeitritt oder Relay-Anfrage abgelehnt.'));
+        closeCourseConnection(connection);
+        void updateShareSessionState(courseSyncId, 'error');
+        console.warn('Sync: Relay-Anfrage abgelehnt.');
+        return;
+      }
       if (incoming.type === 'catchup_response') { handleCatchupResponse(incoming); return; }
       if (incoming.type === 'sync_request') { handleSyncRequest(incoming); return; }
 
-      if (incoming.type === 'sync_response') {
-        const kind = typeof incoming.payload?.kind === 'string' ? incoming.payload.kind : '';
-        if (kind === 'snapshot') { handleSnapshotResponse(incoming); return; }
-        if (kind === 'delta') { handleDeltaResponse(incoming); }
-      }
+      if (incoming.type === 'sync_response') handleSyncResponse(incoming);
     };
 
     const handleWsClose = () => {
-      connectionsRef.current.delete(connection.courseSyncId);
-      void updateShareSessionState(connection.courseSyncId, 'idle');
+      clearTimeout(joinTimeout);
+      if (connection.ticketRefreshTimer) clearTimeout(connection.ticketRefreshTimer);
+      if (!isCurrent()) {
+        connection.rejectReady(new DOMException('Veraltete Raumverbindung beendet.', 'AbortError'));
+        return;
+      }
+      connection.rejectReady(new Error('Verbindung zum Relay beendet.'));
+      void updateShareSessionState(connection.courseSyncId, 'error');
 
       const canRetryInForeground = typeof document === 'undefined' || !document.hidden;
 
-      if (!connection.intentionalClose && canRetryInForeground && connection.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      if (canRetryInForeground && connection.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
         const delay = Math.min(1000 * Math.pow(2, connection.reconnectAttempts), MAX_RECONNECT_DELAY_MS);
         connection.reconnectAttempts += 1;
         connection.reconnectTimer = setTimeout(() => {
-          reconnectCourseSessionRef.current(courseId);
+          if (isCurrent()) reconnectCourseSessionRef.current(courseId);
         }, delay);
       }
     };
 
     const handleWsError = () => {
-      void updateShareSessionState(courseSyncId, 'error');
+      if (isCurrent()) void updateShareSessionState(courseSyncId, 'error');
     };
 
     ws.onopen = handleWsOpen;
     ws.onmessage = handleWsMessage;
     ws.onclose = handleWsClose;
     ws.onerror = handleWsError;
+    await connectingState;
+    await ready;
   }, [
+    closeCourseConnection,
     emitCourseChange,
     emitSnapshotImport,
     deviceId,
@@ -840,9 +840,30 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl, pushNotifi
     registerPushForConnection,
     sendDeltaEventsOverConnection,
     touchShareSession,
-    updateRelayQueueCursor,
     updateShareSessionState,
   ]);
+
+  const createJoinInvitation = useCallback(async (courseId: number, baseUrl: string): Promise<string> => {
+    await connectCourseSession(courseId);
+    const { courseSyncId } = await ensureCourseSyncId(courseId);
+    const session = await db.shareSessions.where('courseSyncId').equals(courseSyncId).first();
+    const connection = connectionsRef.current.get(courseSyncId);
+    if (!session || !connection?.ticket) throw new Error('Keine autorisierte Verbindung zum Relay.');
+    return createInvitation(session, connection.ticket, baseUrl);
+  }, [connectCourseSession]);
+
+  const reconnectCourseSession = useCallback((courseId: number): void => {
+    void connectCourseSession(courseId).catch(async (error: unknown) => {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      console.warn('Sync: Automatische Verbindung fehlgeschlagen.');
+      const course = await db.courses.get(courseId);
+      if (!course?.syncId) return;
+      const current = connectionsRef.current.get(course.syncId);
+      if (!current || current.ws.readyState === WebSocket.CLOSED) {
+        await updateShareSessionState(course.syncId, 'error');
+      }
+    }).catch(() => console.warn('Sync: Verbindungsfehler konnte nicht gespeichert werden.'));
+  }, [connectCourseSession, updateShareSessionState]);
 
   useEffect(() => {
     for (const connection of connectionsRef.current.values()) {
@@ -855,10 +876,8 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl, pushNotifi
   }, [pushNotificationsEnabled, registerPushForConnection, sendPushUnsubscribeOverConnection]);
 
   useEffect(() => {
-    reconnectCourseSessionRef.current = (courseIdValue: number) => {
-      void connectCourseSession(courseIdValue);
-    };
-  }, [connectCourseSession]);
+    reconnectCourseSessionRef.current = reconnectCourseSession;
+  }, [reconnectCourseSession]);
 
   useEffect(() => {
     const reconnectSharedSessions = async () => {
@@ -874,18 +893,18 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl, pushNotifi
         const isOpen = connection && (connection.ws.readyState === WebSocket.OPEN || connection.ws.readyState === WebSocket.CONNECTING);
         if (isOpen) continue;
 
-        void connectCourseSession(course.id);
+        reconnectCourseSession(course.id);
       }
     };
 
     const handleVisibilityChange = () => {
       if (!document.hidden) {
-        void reconnectSharedSessions();
+        void reconnectSharedSessions().catch(reportReconnectError);
       }
     };
 
     const handleOnline = () => {
-      void reconnectSharedSessions();
+      void reconnectSharedSessions().catch(reportReconnectError);
     };
 
     if (typeof document !== 'undefined') {
@@ -895,7 +914,8 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl, pushNotifi
       window.addEventListener('online', handleOnline);
     }
 
-    void reconnectSharedSessions();
+    const reportReconnectError = () => console.warn('Sync: Freigaben konnten nicht für die Wiederverbindung geladen werden.');
+    void reconnectSharedSessions().catch(reportReconnectError);
 
     return () => {
       if (typeof document !== 'undefined') {
@@ -905,7 +925,7 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl, pushNotifi
         window.removeEventListener('online', handleOnline);
       }
     };
-  }, [connectCourseSession]);
+  }, [reconnectCourseSession]);
 
   const contextValue = useMemo<RelaySyncContextValue>(() => ({
     deviceId,
@@ -913,6 +933,7 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl, pushNotifi
     relayBaseUrl: normalizedRelayBaseUrl,
     startShareSession,
     joinShareSession,
+    createJoinInvitation,
     updateShareSessionState,
     touchShareSession,
     leaveShareSession,
@@ -933,6 +954,7 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl, pushNotifi
     waitForInitialSnapshot,
   }), [
     connectCourseSession,
+    createJoinInvitation,
     deviceId,
     disconnectCourseSession,
     exportSnapshot,

@@ -5,7 +5,7 @@ const relayImage = process.env.E2E_RELAY_IMAGE ?? 'digikladde-relay:e2e';
 if (useBuildArtifacts && !/^digikladde-relay:[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$/.test(relayImage)) {
   throw new Error('E2E_RELAY_IMAGE must be a tagged local digikladde-relay image');
 }
-const appBasePath = useBuildArtifacts ? process.env.E2E_APP_BASE_PATH : '/';
+const appBasePath = process.env.E2E_APP_BASE_PATH ?? (useBuildArtifacts ? undefined : '/');
 if (!appBasePath?.startsWith('/') || !appBasePath.endsWith('/')) {
   throw new Error('E2E_APP_BASE_PATH must start and end with "/" when using build artifacts');
 }
@@ -50,7 +50,7 @@ export default defineConfig({
     {
       command: `${useBuildArtifacts ? '' : 'npm run build && '}npm run preview -- --host 127.0.0.1 --port 4173 --strictPort`,
       url: baseURL,
-      env: { GITHUB_ACTIONS: useBuildArtifacts ? 'true' : 'false' },
+      env: { GITHUB_ACTIONS: useBuildArtifacts || appBasePath !== '/' ? 'true' : 'false' },
       reuseExistingServer: false,
       stdout: 'pipe',
       timeout: 120_000,

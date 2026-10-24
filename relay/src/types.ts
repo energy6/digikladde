@@ -8,17 +8,12 @@ export type RelayEventType =
   | 'catchup_ack'
   | 'push_subscribe'
   | 'push_unsubscribe'
-  | 'peer_key_request'
-  | 'peer_key_response'
   | 'sync_request'
   | 'sync_response'
-  | 'rekey_prepare'
-  | 'rekey_ack'
-  | 'rekey_commit'
   | 'error';
 
 export type RelayEnvelope = {
-  version: 1;
+  version: 2;
   type: RelayEventType;
   roomId?: string;
   deviceId?: string;

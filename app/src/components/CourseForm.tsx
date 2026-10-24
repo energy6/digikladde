@@ -10,7 +10,7 @@ import { courseTypes } from '../models/types';
 import { updateCourseWithFlightSchoolRules } from '../utils/courseFlightSchoolUpdate';
 import { sanitizeFlightSchoolName, UNKNOWN_FLIGHT_SCHOOL } from '../utils/flightSchool';
 import { createId } from '../utils/idGenerator';
-import { parseJoinInvite } from '../utils/parseJoinInvite';
+import { redeemInvitation } from '../utils/invitations';
 
 type Props = {
   open: boolean;
@@ -60,7 +60,7 @@ const CourseForm = ({
   onSaved,
 }: Props) => {
   const [form] = Form.useForm<CourseFormValues>();
-  const { deviceId, logCourseDelta, joinShareSession, connectCourseSession, waitForInitialSnapshot, disconnectCourseSession, leaveShareSession } = useRelaySync();
+  const { deviceId, relayBaseUrl, getShareSession, logCourseDelta, joinShareSession, connectCourseSession, waitForInitialSnapshot, disconnectCourseSession, leaveShareSession } = useRelaySync();
   const [saving, setSaving] = useState(false);
   const [scanModalOpen, setScanModalOpen] = useState(false);
   const [sharedCourseLoading, setSharedCourseLoading] = useState(false);
@@ -141,35 +141,22 @@ const CourseForm = ({
   }, [courseId, defaultFlightSchool, form, open, resetDraftState]);
 
   const loadSharedCourseFromInvite = useCallback(async (rawValue: string) => {
-    const parsed = parseJoinInvite(rawValue);
-    if (!parsed) {
-      message.error('QR-Code konnte nicht gelesen werden.');
-      return;
-    }
-
     const token = ++joinTokenRef.current;
     setScanModalOpen(false);
     setSharedCourseLoading(true);
-
-    const preexistingCoursesWithSyncId = parsed.courseSyncId
-      ? await db.courses.where('syncId').equals(parsed.courseSyncId).toArray()
-      : [];
-    const preexistingIds = new Set(preexistingCoursesWithSyncId.map((course) => Number(course.id)));
-
-    if (preexistingCoursesWithSyncId.length > 0) {
-      const existingCourse = preexistingCoursesWithSyncId[0];
-      setSharedCourseLoading(false);
-      setLoadedCourseId(Number(existingCourse.id));
-      form.setFieldsValue({
-        name: existingCourse.name,
-        courseType: existingCourse.courseType,
-        startDate: existingCourse.startDate,
-        endDate: existingCourse.endDate,
-        flightSchool: sanitizeFlightSchoolName(existingCourse.flightSchool),
-      });
-      message.info('Geteilter Kurs ist bereits lokal vorhanden. Daten wurden in den Dialog geladen.');
+    let invitation: Awaited<ReturnType<typeof redeemInvitation>>;
+    try {
+      invitation = await redeemInvitation(rawValue, relayBaseUrl);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : 'Einladung konnte nicht eingelöst werden.');
+      if (token === joinTokenRef.current) setSharedCourseLoading(false);
       return;
     }
+    if (token !== joinTokenRef.current) return;
+    const { roomId, courseSyncId } = invitation.roomKey;
+
+    const preexistingCoursesWithSyncId = await db.courses.where('syncId').equals(courseSyncId).toArray();
+    const preexistingIds = new Set(preexistingCoursesWithSyncId.map((course) => Number(course.id)));
 
     const now = new Date();
     const today = now.toISOString().slice(0, 10);
@@ -180,19 +167,23 @@ const CourseForm = ({
       endDate: today,
       flightSchool: sanitizeFlightSchoolName(defaultFlightSchool),
       students: [],
-      syncId: parsed.courseSyncId || createId('course'),
+      syncId: courseSyncId,
     };
 
     let placeholderCourseId: number | null = null;
 
     try {
-      placeholderCourseId = Number(await db.courses.add(placeholderCourse));
-      draftCourseIdsRef.current = new Set([placeholderCourseId]);
+      placeholderCourseId = preexistingCoursesWithSyncId[0]?.id ?? Number(await db.courses.add(placeholderCourse));
+      draftCourseIdsRef.current = preexistingIds.has(placeholderCourseId) ? new Set() : new Set([placeholderCourseId]);
+      await disconnectCourseSession(placeholderCourseId);
+      const previousSession = await getShareSession(courseSyncId);
+      if (previousSession && previousSession.roomId !== roomId) await leaveShareSession(courseSyncId);
 
       await joinShareSession({
         courseId: placeholderCourseId,
-        roomId: parsed.roomId,
-        joinSecret: parsed.joinSecret,
+        roomId,
+        joinSecret: invitation.joinSecret,
+        roomKey: invitation.roomKey,
       });
 
       await connectCourseSession(placeholderCourseId);
@@ -216,7 +207,7 @@ const CourseForm = ({
       }
 
       const nextDraftIds = new Set<number>();
-      if (placeholderCourseId) {
+      if (placeholderCourseId && !preexistingIds.has(placeholderCourseId)) {
         nextDraftIds.add(placeholderCourseId);
       }
 
@@ -236,32 +227,30 @@ const CourseForm = ({
         flightSchool: sanitizeFlightSchoolName(importedCourse.flightSchool),
       });
       message.success('Kursdaten geladen. Bitte speichern.');
-    } catch (error) {
-      if (placeholderCourseId) {
+    } catch {
+      if (placeholderCourseId && !preexistingIds.has(placeholderCourseId)) {
         await cleanupSingleDraftCourse(placeholderCourseId);
       }
 
       // Guard against late-arriving snapshot import: remove only courses created during this flow.
-      if (parsed.courseSyncId) {
-        const coursesWithSyncId = await db.courses.where('syncId').equals(parsed.courseSyncId).toArray();
-        for (const candidate of coursesWithSyncId) {
-          const candidateId = Number(candidate.id);
-          if (!preexistingIds.has(candidateId)) {
-            await cleanupSingleDraftCourse(candidateId);
-          }
+      const coursesWithSyncId = await db.courses.where('syncId').equals(courseSyncId).toArray();
+      for (const candidate of coursesWithSyncId) {
+        const candidateId = Number(candidate.id);
+        if (!preexistingIds.has(candidateId)) {
+          await cleanupSingleDraftCourse(candidateId);
         }
       }
 
       draftCourseIdsRef.current.clear();
       setLoadedCourseId(null);
       message.error('Kursdaten konnten nicht geladen werden.');
-      console.error(error);
+      console.warn('Verschlüsselter Kursbeitritt fehlgeschlagen.');
     } finally {
       if (token === joinTokenRef.current) {
         setSharedCourseLoading(false);
       }
     }
-  }, [cleanupSingleDraftCourse, connectCourseSession, defaultFlightSchool, disconnectCourseSession, form, joinShareSession, waitForInitialSnapshot]);
+  }, [cleanupSingleDraftCourse, connectCourseSession, defaultFlightSchool, disconnectCourseSession, form, getShareSession, joinShareSession, leaveShareSession, relayBaseUrl, waitForInitialSnapshot]);
 
   useEffect(() => {
     if (!open || courseId || !initialJoinInviteRaw || sharedCourseLoading) return;

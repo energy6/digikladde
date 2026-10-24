@@ -16,7 +16,7 @@ export const relayConfig: RelayConfig = {
   host: process.env.RELAY_HOST ?? '0.0.0.0',
   port: parseNumber('RELAY_PORT', 8080),
   wsPath: normalizePath(process.env.RELAY_WS_PATH ?? '/relay'),
-  maxPayloadBytes: parseNumber('RELAY_MAX_PAYLOAD_BYTES', 128 * 1024),
+  maxPayloadBytes: parseNumber('RELAY_MAX_PAYLOAD_BYTES', 176 * 1024),
   maxConnectionsPerIp: parseNumber('RELAY_MAX_CONNECTIONS_PER_IP', 40),
   maxEventsPerMinutePerIp: parseNumber('RELAY_MAX_EVENTS_PER_MINUTE_PER_IP', 1200),
   maxJoinPerMinutePerRoom: parseNumber('RELAY_MAX_JOIN_PER_MINUTE_PER_ROOM', 100),

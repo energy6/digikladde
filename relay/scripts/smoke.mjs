@@ -9,7 +9,7 @@ const connectClient = (deviceId) => new Promise((resolve, reject) => {
 
   ws.on('open', () => {
     ws.send(JSON.stringify({
-      version: 1,
+      version: 2,
       type: 'join_request',
       payload: { roomId, deviceId, joinSecret },
     }));
@@ -34,19 +34,22 @@ const run = async () => {
 
     b.ws.on('message', (raw) => {
       const msg = JSON.parse(String(raw));
-      if (msg.type === 'peer_key_request') {
+      if (msg.type === 'sync_request') {
         clearTimeout(timeout);
         resolve(msg);
       }
     });
 
     a.ws.send(JSON.stringify({
-      version: 1,
-      type: 'peer_key_request',
+      version: 2,
+      type: 'sync_request',
       roomId,
       deviceId: 'teacher-a',
       ticket: a.ticket,
-      payload: { hello: 'world' },
+      payload: { box: {
+        version: 2, roomId, courseSyncId: 'smoke-course', deviceId: 'teacher-a', messageId: 'smoke-message',
+        epoch: 'smoke-epoch', purpose: 'snapshot_request', iv: 'A'.repeat(16), ciphertext: 'A'.repeat(24),
+      } },
     }));
   });
 

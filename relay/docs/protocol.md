@@ -1,82 +1,174 @@
-# Relay Protocol V1
+# Relay Protocol V2
 
-All websocket messages are JSON with this envelope:
+V2 replaces the plaintext V1 sync protocol. Upgrade app and relay together.
+V1 clients and invitations are rejected. The database upgrade removes old sharing
+sessions and sync events while retaining local courses, students and flights.
+Courses become local-only until shared again in a new encrypted room.
+
+## WebSocket envelope
 
 ```json
 {
-  "version": 1,
-  "type": "join_request",
-  "roomId": "room-123",
-  "deviceId": "device-abc",
-  "ticket": "optional",
+  "version": 2,
+  "type": "sync_response",
+  "roomId": "opaque-room-id",
+  "deviceId": "opaque-device-id",
+  "ticket": "session-ticket",
   "seq": 1,
-  "targetDeviceId": "optional",
-  "payload": {}
+  "targetDeviceId": "optional-recipient",
+  "payload": {
+    "box": {
+      "version": 2,
+      "roomId": "opaque-room-id",
+      "courseSyncId": "opaque-course-id",
+      "deviceId": "opaque-device-id",
+      "messageId": "unique-message-id",
+      "epoch": "opaque-key-epoch",
+      "purpose": "delta",
+      "iv": "base64url-96-bit-iv",
+      "ciphertext": "base64url-ciphertext-and-gcm-tag"
+    }
+  }
 }
 ```
 
-## Required Events
+The box has exactly these nine fields. `payload` may additionally contain
+`push`, an encrypted box with purpose `push` and the same bindings/message ID
+as its delta. No plaintext notification, operation, snapshot or entity payload
+is accepted.
 
-- `join_request`: Client asks to join room with payload `{ roomId, deviceId, joinSecret }`.
-- `join_ok`: Relay confirms join and returns `ticket` + expiration timestamp.
-- `join_denied`: Join was rejected (for example wrong secret).
-- `ticket_refresh`: Client requests or receives a new ticket.
-- `catchup_request`: Client asks the relay for queued sync deltas after payload `{ afterSeq }`.
-- `catchup_response`: Relay returns payload `{ messages }` with queued `sync_response` delta messages for the requesting device.
-- `catchup_ack`: Client confirms queued sync deltas were applied with payload `{ throughSeq }`.
-- `push_subscribe`: Client registers a Web Push subscription for the joined room/device with payload `{ subscription }`.
-- `push_unsubscribe`: Client removes the Web Push subscription for the joined room/device.
-- `peer_key_request`: Forwarded to peers.
-- `peer_key_response`: Forwarded to peers.
-- `sync_request`: Forwarded to peers.
-- `sync_response`: Forwarded to peers.
-- `rekey_prepare`: Forwarded to peers.
-- `rekey_ack`: Forwarded to peers.
-- `rekey_commit`: Forwarded to peers.
-- `error`: Relay-side validation or authorization error.
+## Encryption
 
-## Authorization Rules
+The creating device generates an independent random 256-bit room root secret,
+epoch and relay join credential using Web Crypto. The relay knows only the
+join credential, never the root secret.
 
-- Only `join_request` is accepted before a session joined a room.
-- All other events require valid `roomId`, `deviceId` and current session `ticket`.
-- Relay never inspects E2E payload content.
+Clients derive non-exportable AES-256-GCM keys with HKDF-SHA-256:
 
-## Incoming Message Validation
+- Salt: UTF-8 JSON array `[roomId, courseSyncId, epoch]`.
+- Info: UTF-8 JSON array `["digikladde/v2", domain, deviceId]`.
+- Domain: `sync` for deltas, snapshots and requests; `push` for notification
+  details; `invite` for separately keyed invitation packages.
+- AEAD additional data: UTF-8 JSON array
+  `[2, roomId, courseSyncId, deviceId, messageId, epoch, purpose]`.
+- A new random 96-bit IV for every encryption, including retries.
+- Ciphertext includes the default 128-bit GCM tag; binary fields use canonical
+  unpadded base64url.
 
-The relay validates every client message with Zod before dispatching it or
-changing room state. TypeScript input types are inferred from these schemas.
-Invalid JSON receives `invalid_json`; valid JSON that does not match a client
-message schema receives `invalid_event`. Validation errors do not close the
-connection or echo payloads, secrets, tickets, or detailed schema errors.
+Keys are separated by purpose domain and sender. Each device reserves usage in
+IndexedDB before encrypting and refuses further messages at `2^24` encryptions
+per local room key (all domains combined). Sharing stops explicitly at this
+limit; this release provides no room-reset or key-rotation UI.
+Message IDs identify operations, not encryption attempts. Re-encrypting a
+retried operation uses a fresh IV but preserves its message ID.
 
-- Only the client events listed above are accepted; `join_ok`, `join_denied`,
-  `catchup_response`, and `error` are server-only.
-- Envelope and relay-control payload objects reject unknown fields.
-- Join payload strings are trimmed and must be nonempty. Other identifiers and
-  tickets must be nonempty strings and are not coerced or normalized.
-- Every non-join message requires `roomId`, `deviceId`, and `ticket`. Session
-  authorization is checked separately after structural validation.
-- `seq`, `afterSeq`, and `throughSeq` must be nonnegative safe integers, without
-  string coercion or rounding. An omitted catch-up request payload or `afterSeq`
-  starts at zero; an ACK must explicitly provide `throughSeq`.
-- `ticket_refresh` and `push_unsubscribe` accept no payload or an empty object.
-- Push subscriptions require an HTTPS URL, nonempty key strings, and an optional
-  null or nonnegative safe integer expiration timestamp.
-- Forwarded peer/sync/rekey payloads may be omitted or contain an object.
-  Their application-specific contents are preserved, not validated by the relay.
-- The existing `RELAY_MAX_PAYLOAD_BYTES` limit bounds each WebSocket message;
-  schema validation does not add cumulative queue or room budgets.
+All authorized participants know the root secret. Authentication proves
+possession of the room secret, not individual authorship or writing permissions.
+There is no forward secrecy, participant-revocation workflow or key-rotation
+UI. An existing participant cannot be excluded from its room using this release.
+Previously received data cannot be recalled.
 
-These schemas do not provide course authorization, trusted proxy handling,
-SSRF-safe push delivery, or end-to-end encryption. HTTPS URL validation alone
-does not establish that a push destination is safe.
+## Events and authorization
 
-## Relay Notes
+- `join_request`: `{ roomId, deviceId, joinSecret }`; the first join creates the
+  room. Following joins must present the same independent relay credential.
+- `join_ok` / `join_denied`: confirmation with a session-bound ticket and
+  `ticketExpiresAt`/`serverTime`, or denial.
+- `ticket_refresh`: replaces the ticket; clients refresh halfway through its
+  lifetime.
+- `sync_request`: encrypted `snapshot_request` box; plaintext is
+  `{ "mode": "snapshot_request" }`.
+- `sync_response`: encrypted `snapshot` or `delta` box. Inner snapshots and
+  delta envelopes retain their existing application schema V1; that does not
+  permit V1 transport.
+- `catchup_request`: `{ afterSeq }`, default zero. Clients start from zero on
+  reconnect because relay queues do not survive restarts.
+- `catchup_response`: `{ messages }`, ordered per-device queued delta messages.
+- `catchup_ack`: `{ throughSeq }`, only after successfully processing all
+  returned messages up to that sequence.
+- `push_subscribe`: `{ subscription }`, standard Web Push subscription.
+- `push_unsubscribe`: removes the joined device's room subscription.
+- `error`: structured non-sensitive error code/message.
 
-- First join request creates a room with `joinSecret`.
-- Further joins must present matching `joinSecret`.
-- Tickets are short-lived and refreshed by `ticket_refresh`.
-- Relay keeps an in-memory per-device catch-up queue for `sync_response` delta messages. The default retention is 24 hours.
-- Queues and push subscriptions are intentionally in-memory and are lost when the relay process restarts.
-- Web Push notifications are only a nudge that queued updates exist. Clients must still reconnect and request catch-up data.
-- Web Push requires HTTPS, notification permission, and a service worker. On iOS/iPadOS, browser Web Push is available for installed Home Screen web apps, not ordinary Safari tabs.
+Except for join, client messages require matching room/device and a valid
+current ticket. The relay strips tickets before forwarding. Unsupported
+peer-key/rekey placeholders from V1 have been removed.
+
+Zod validates strict envelopes and control payloads before dispatch. Unknown
+properties, invalid JSON, invalid versions, non-object payloads and plaintext
+sync are rejected without echoing input. Sequences/cursors are nonnegative safe
+integers. Push endpoints must be HTTPS; this syntactic check is not an SSRF
+guarantee. Connection, message, join and participant limits still apply.
+
+## Invitation API
+
+Invitation possession is authorization; no additional participant confirmation
+is required. Use HTTPS outside loopback development.
+
+1. The authorized client fetches `/health` for `serverTime` and creates an
+   invitation expiring ten minutes after that time.
+2. It generates a random 256-bit invitation ID and a separate random 256-bit
+   invitation key. The encrypted `invite` box contains room/course IDs, epoch,
+   room root secret, relay join credential, expiry and initial usage counter.
+3. `POST /invites` accepts `{ roomId, deviceId, ticket, inviteId, box, expiresAt }`.
+   The ticket must belong to a currently joined session. The relay stores only
+   the encrypted package and expiry in RAM.
+4. The shared link/QR uses `#/?v=2&invite=<id>&key=<key>`. The fragment works with
+   both root BrowserRouter deployments and subpath HashRouter deployments.
+   It is removed from browser history immediately after capture. No decryption
+   key is submitted to the relay or included in HTTP queries.
+5. `POST /invites/redeem` accepts only the invitation ID and returns the box and
+   server time. Consumption is atomic: at most one concurrent request succeeds.
+   At the exact expiration boundary the invitation is invalid.
+6. The new device decrypts and validates the package, stores its key locally,
+   then joins and requests an encrypted snapshot from an online participant.
+
+Aborted redemption still consumes the link; generate another invitation.
+Expired/redeemed packages are deleted. Relay restart loses outstanding
+invitations. Limits: 4 KiB box, 8 KiB HTTP body, 40 outstanding invitations per
+room and 10,000 globally, with event rate limiting. Responses are not cached.
+
+This bearer-link workflow deliberately does not protect against a stolen link
+during its validity window or enforce expiry against a malicious relay.
+
+## Queues, replay protection and push
+
+The relay routes opaque boxes using IDs, queues deltas for known devices and
+retains ciphertext in RAM for the configured retention period (24 hours by
+default). Queues, subscriptions and invitations are not persisted. Devices
+recreate rooms after relay restart using their locally retained relay
+credential; a new snapshot repairs gaps after queue loss.
+
+Clients authenticate boxes before any ingestion, import or application.
+Persistent replay keys are `[roomId, epoch, purpose, deviceId, messageId]`;
+recording successful processing and applying sync mutations share a database
+transaction. Duplicate delivery has no second effect. Invalid messages stop
+the connection with an explicit sync error and are not ACKed. Delayed valid
+offline messages remain eligible for the existing conflict rules.
+
+For offline recipients, the relay forwards the sender's encrypted `push` box
+inside ordinary Web Push: `{ version: 2, roomId, box? }`. It never constructs
+notification text from sync data. The receiving service worker loads the local
+key and decrypts without requiring an open app tab. Missing keys or invalid
+boxes produce only a generic notice; invalid boxes are diagnosed without
+sensitive content. Push replay state is separate from sync replay state.
+Push boxes larger than 2,800 bytes produce an explicit sender warning and a
+generic push, without truncating or dropping the underlying sync.
+
+Web Push/VAPID adds transport protection but is not the E2E layer. Notification
+permission and platform support are still required; iOS/iPadOS requires an
+installed Home Screen PWA. Detailed notifications may appear on lock screens.
+
+## Deployment and privacy boundaries
+
+Reverse proxies must forward `/relay` WebSockets, `/push/*`, `/health` and
+`POST/OPTIONS /invites` and `/invites/redeem` to the relay, without body logging
+or caching invitations. The default WebSocket limit is 180,224 bytes (176 KiB)
+to accommodate encryption/base64 overhead over the previous 128 KiB limit.
+Clients explicitly reject oversized encrypted messages.
+
+Only endpoints store plaintext course content and E2E keys. IndexedDB is not
+encrypted at rest; protect browser profiles and the frontend origin. Course
+backups do not include sharing secrets. Routing IDs, timing, message lengths,
+IP addresses and push endpoints remain visible to infrastructure. E2E does not
+protect against compromised clients or modified frontend delivery.

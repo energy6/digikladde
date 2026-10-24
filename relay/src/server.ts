@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { createServer } from 'node:http';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { URL } from 'node:url';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import webPush from 'web-push';
 import { relayConfig } from './config.js';
-import { clientEnvelopeSchema, type ClientMessage } from './protocol.js';
+import { clientEnvelopeSchema, invitationCreateSchema, invitationRedeemSchema, type ClientMessage } from './protocol.js';
+import { consumeInvitation, pruneInvitations, storeInvitation } from './encryptedProtocol.js';
 import {
   ackQueuedMessagesForDevice,
   attachSessionToRoom,
@@ -48,16 +49,6 @@ if (webPushEnabled) {
   );
 }
 
-const forwardableTypes = new Set([
-  'peer_key_request',
-  'peer_key_response',
-  'sync_request',
-  'sync_response',
-  'rekey_prepare',
-  'rekey_ack',
-  'rekey_commit',
-]);
-
 const now = () => Date.now();
 const sessionsBySocket = new WeakMap<WebSocket, Session>();
 
@@ -85,7 +76,7 @@ const send = (session: Session, envelope: RelayEnvelope) => {
 
 const sendError = (session: Session, code: RelayErrorCode, message: string, close = false) => {
   send(session, {
-    version: 1,
+    version: 2,
     type: 'error',
     payload: { code, message },
   });
@@ -126,7 +117,7 @@ const handleJoinRequest = (session: Session, envelope: ClientMessage<'join_reque
 
   if (room.joinSecret !== joinSecret) {
     send(session, {
-      version: 1,
+      version: 2,
       type: 'join_denied',
       roomId,
       deviceId,
@@ -146,7 +137,7 @@ const handleJoinRequest = (session: Session, envelope: ClientMessage<'join_reque
   attachSessionToRoom(session, room, deviceId, ticket, ticketExpiresAt);
 
   send(session, {
-    version: 1,
+    version: 2,
     type: 'join_ok',
     roomId,
     deviceId,
@@ -169,7 +160,7 @@ const handleTicketRefresh = (session: Session, envelope: RelayEnvelope) => {
   session.ticketExpiresAt = now() + relayConfig.ticketTtlMs;
 
   send(session, {
-    version: 1,
+    version: 2,
     type: 'ticket_refresh',
     roomId: joined.roomId,
     deviceId: joined.deviceId,
@@ -195,7 +186,7 @@ const handleCatchupRequest = (session: Session, envelope: ClientMessage<'catchup
   const messages = listQueuedMessagesForDevice(room, joined.deviceId, afterSeq);
 
   send(session, {
-    version: 1,
+    version: 2,
     type: 'catchup_response',
     roomId: joined.roomId,
     deviceId: joined.deviceId,
@@ -235,57 +226,6 @@ const handlePushUnsubscribe = (session: Session, envelope: RelayEnvelope) => {
   deletePushSubscriptionForDevice(room, joined.deviceId);
 };
 
-const isDeltaSyncResponse = (envelope: RelayEnvelope): envelope is RelayEnvelope & { payload: Record<string, unknown> } => {
-  if (envelope.type !== 'sync_response' || !isRecord(envelope.payload)) return false;
-  return envelope.payload.kind === 'delta' && isRecord(envelope.payload.envelope);
-};
-
-type PushNotificationText = {
-  title: string;
-  body: string;
-};
-
-const readString = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : undefined);
-
-const buildFallbackNotification = (envelope: Record<string, unknown>): PushNotificationText => {
-  const operation = readString(envelope.operation);
-  const payload = isRecord(envelope.payload) ? envelope.payload : {};
-  const studentName = readString(payload.studentName) ?? readString(payload.name);
-
-  if (operation === 'flight_upsert') {
-    if (readString(payload.startTime) && !readString(payload.endTime) && !readString(payload.landingMarkedAt)) {
-      return { title: 'DigiKladde', body: `${studentName || 'Schüler'} gestartet` };
-    }
-
-    if (readString(payload.landingMarkedAt) && !readString(payload.endTime)) {
-      return { title: 'DigiKladde', body: `${studentName || 'Schüler'} gelandet` };
-    }
-
-    if (readString(payload.endTime) || readString(payload.landingFinalizedAt)) {
-      return { title: 'DigiKladde', body: `${studentName || 'Schüler'} abgeschlossen` };
-    }
-
-    return { title: 'DigiKladde', body: 'Flugdaten aktualisiert' };
-  }
-
-  if (operation === 'flight_delete') return { title: 'DigiKladde', body: 'Flug entfernt' };
-  if (operation === 'student_upsert') return { title: 'DigiKladde', body: `${studentName || 'Schüler'} aktualisiert` };
-  if (operation === 'student_delete') return { title: 'DigiKladde', body: `${studentName || 'Schüler'} entfernt` };
-  if (operation === 'course_upsert') return { title: 'DigiKladde', body: 'Kursdaten aktualisiert' };
-
-  return { title: 'DigiKladde', body: 'Neue Kursdaten verfügbar' };
-};
-
-const buildPushNotificationText = (messagePayload: Record<string, unknown>): PushNotificationText => {
-  const envelope = isRecord(messagePayload.envelope) ? messagePayload.envelope : {};
-  const notification = isRecord(envelope.notification) ? envelope.notification : {};
-  const title = readString(notification.title);
-  const body = readString(notification.body);
-
-  if (title && body) return { title, body };
-  return buildFallbackNotification(envelope);
-};
-
 const sendQueuedUpdatePush = async (roomId: string, deviceId: string, messagePayload: Record<string, unknown>) => {
   if (!webPushEnabled) return;
 
@@ -293,15 +233,11 @@ const sendQueuedUpdatePush = async (roomId: string, deviceId: string, messagePay
   const subscription = room ? getPushSubscriptionForDevice(room, deviceId) : undefined;
   if (!subscription) return;
 
-  const notification = buildPushNotificationText(messagePayload);
-
   try {
     await webPush.sendNotification(subscription, JSON.stringify({
-      title: notification.title,
-      body: notification.body,
-      data: {
-        roomId,
-      },
+      version: 2,
+      roomId,
+      ...(messagePayload.push ? { box: messagePayload.push } : {}),
     }));
   } catch (error) {
     const statusCode = isRecord(error) && typeof error.statusCode === 'number' ? error.statusCode : undefined;
@@ -314,12 +250,18 @@ const sendQueuedUpdatePush = async (roomId: string, deviceId: string, messagePay
   }
 };
 
-const forwardEvent = (session: Session, envelope: RelayEnvelope) => {
+const forwardEvent = (session: Session, envelope: ClientMessage<'sync_request' | 'sync_response'>) => {
   const joined = requireJoinedSession(session, envelope);
   if (!joined) return;
 
-  if (!forwardableTypes.has(envelope.type)) {
-    sendError(session, 'invalid_event', `Event-Typ ${envelope.type} wird nicht weitergeleitet.`);
+  const { box, push } = envelope.payload;
+  if (box.roomId !== joined.roomId || box.deviceId !== joined.deviceId
+    || (envelope.type === 'sync_request' ? box.purpose !== 'snapshot_request' : !['delta', 'snapshot'].includes(box.purpose))
+    || (push !== undefined && (push.purpose !== 'push' || box.purpose !== 'delta'
+      || push.roomId !== box.roomId || push.courseSyncId !== box.courseSyncId
+      || push.deviceId !== box.deviceId || push.epoch !== box.epoch || push.messageId !== box.messageId
+      || Buffer.byteLength(JSON.stringify(push)) > 2800))) {
+    sendError(session, 'invalid_event', 'Nur verschlüsselte V2-Nachrichten sind erlaubt.');
     return;
   }
 
@@ -339,10 +281,7 @@ const forwardEvent = (session: Session, envelope: RelayEnvelope) => {
     deviceId: joined.deviceId,
     ticket: undefined,
   };
-  const deltaEnvelope = isDeltaSyncResponse(outbound) && isRecord(outbound.payload.envelope)
-    ? outbound.payload.envelope
-    : null;
-  const deltaOpId = deltaEnvelope ? readString(deltaEnvelope.opId) : undefined;
+  const deltaOpId = envelope.type === 'sync_response' && box.purpose === 'delta' ? box.messageId : undefined;
   const deliverableDirectDevices = new Set<string>();
   const blockedDirectDevices = new Set<string>();
 
@@ -361,7 +300,7 @@ const forwardEvent = (session: Session, envelope: RelayEnvelope) => {
     send(candidate, outbound);
   });
 
-  if (isDeltaSyncResponse(outbound)) {
+  if (deltaOpId) {
     const targetDeviceIds = envelope.targetDeviceId
       ? [envelope.targetDeviceId]
       : Array.from(room.knownDevices);
@@ -373,14 +312,14 @@ const forwardEvent = (session: Session, envelope: RelayEnvelope) => {
           ts: now(),
           fromDeviceId: joined.deviceId,
           type: 'sync_response',
-          payload: outbound.payload,
+          payload: envelope.payload,
         }, deltaOpId);
 
         if (!queued) return;
 
         const onlineSessions = getRoomSessionsByDevice(room, targetDeviceId);
         if (onlineSessions.length === 0) {
-          void sendQueuedUpdatePush(joined.roomId, targetDeviceId, outbound.payload);
+          void sendQueuedUpdatePush(joined.roomId, targetDeviceId, envelope.payload);
         }
       });
   }
@@ -393,19 +332,88 @@ const forwardEvent = (session: Session, envelope: RelayEnvelope) => {
   });
 };
 
+const handleInvitationRequest = async (req: IncomingMessage, res: ServerResponse, path: string): Promise<void> => {
+  res.setHeader('access-control-allow-origin', '*');
+  res.setHeader('access-control-allow-methods', 'POST, OPTIONS');
+  res.setHeader('access-control-allow-headers', 'content-type');
+  res.setHeader('cache-control', 'no-store');
+  res.setHeader('content-type', 'application/json');
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+  if (req.method !== 'POST' || !markEventAndCheckRate(req.socket.remoteAddress ?? 'unknown')) {
+    res.writeHead(req.method === 'POST' ? 429 : 405);
+    res.end(JSON.stringify({ error: 'request_denied' }));
+    return;
+  }
+  let bytes = 0;
+  const chunks: Buffer[] = [];
+  for await (const rawChunk of req) {
+    const chunk: unknown = rawChunk;
+    if (typeof chunk !== 'string' && !(chunk instanceof Uint8Array)) throw new TypeError('Unexpected request chunk');
+    const buffer = typeof chunk === 'string' ? Buffer.from(chunk) : Buffer.from(chunk);
+    bytes += buffer.length;
+    if (bytes > 8192) {
+      res.writeHead(413); res.end(JSON.stringify({ error: 'too_large' })); return;
+    }
+    chunks.push(buffer);
+  }
+  let body: unknown;
+  try {
+    body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
+  } catch {
+    res.writeHead(400); res.end(JSON.stringify({ error: 'invalid_json' })); return;
+  }
+  if (path === '/invites/redeem') {
+    const parsed = invitationRedeemSchema.safeParse(body);
+    if (!parsed.success) {
+      res.writeHead(400); res.end(JSON.stringify({ error: 'invalid_invite' })); return;
+    }
+    const result = consumeInvitation(parsed.data.inviteId);
+    res.writeHead('error' in result ? 410 : 200);
+    res.end(JSON.stringify({ ...result, serverTime: now() }));
+    return;
+  }
+  const parsed = invitationCreateSchema.safeParse(body);
+  if (!parsed.success) {
+    res.writeHead(400); res.end(JSON.stringify({ error: 'invalid_invite' })); return;
+  }
+  const invitation = parsed.data;
+  const room = getRoom(invitation.roomId);
+  const authorized = room && getRoomSessions(room).some((entry) => (
+    entry.deviceId === invitation.deviceId && entry.ticket === invitation.ticket
+    && entry.ticketExpiresAt !== undefined && entry.ticketExpiresAt > now()
+  ));
+  if (!authorized || !room) {
+    res.writeHead(403); res.end(JSON.stringify({ error: 'not_joined' })); return;
+  }
+  if (invitation.box.deviceId !== invitation.deviceId
+    || !storeInvitation(invitation.inviteId, { roomId: room.roomId, box: invitation.box, expiresAt: invitation.expiresAt })) {
+    res.writeHead(400); res.end(JSON.stringify({ error: 'invalid_invite' })); return;
+  }
+  res.writeHead(201); res.end(JSON.stringify({ created: true }));
+};
+
 const httpServer = createServer((req, res) => {
   const reqUrl = req.url ?? '/';
   const url = new URL(reqUrl, `http://${req.headers.host ?? 'localhost'}`);
+  if (url.pathname === '/invites' || url.pathname === '/invites/redeem') {
+    void handleInvitationRequest(req, res, url.pathname).catch(() => {
+      log('error', 'invitation request failed');
+      if (!res.headersSent) res.writeHead(500);
+      res.end(JSON.stringify({ error: 'internal_error' }));
+    });
+    return;
+  }
 
   if (url.pathname === '/health') {
     const health = {
       status: 'ok',
+      serverTime: now(),
       uptimeSec: Math.round(process.uptime()),
       stats: snapshotStats(),
       wsPath: relayConfig.wsPath,
     };
     const body = JSON.stringify(health);
-    res.writeHead(200, { 'content-type': 'application/json' });
+    res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'cache-control': 'no-store' });
     res.end(body);
     return;
   }
@@ -566,6 +574,7 @@ wss.on('connection', (ws, session: Session) => {
 
 const heartbeatHandle = setInterval(() => {
   pruneExpiredRoomState();
+  pruneInvitations();
 
   wss.clients.forEach((client) => {
     const session = sessionsBySocket.get(client);

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { once } from 'node:events';
 import { createServer } from 'node:net';
 import { test } from 'node:test';
@@ -123,7 +124,7 @@ void test('relay validates client messages and isolates message-processing failu
     clients.delete(ws);
   };
   const join = (ws: WebSocket, roomId: string, deviceId = 'test-device', joinSecret = 'test-secret') => (
-    exchange(ws, { version: 1, type: 'join_request', payload: { roomId, deviceId, joinSecret } })
+    exchange(ws, { version: 2, type: 'join_request', payload: { roomId, deviceId, joinSecret } })
   );
 
   const validPayload = { roomId: 'test-room', deviceId: 'test-device', joinSecret: 'test-secret' };
@@ -142,7 +143,7 @@ void test('relay validates client messages and isolates message-processing failu
     await t.test(entry.name, async () => {
       const ws = await connect();
       const before = await health();
-      const response = await exchange(ws, { version: 1, type: 'join_request', payload: entry.payload });
+      const response = await exchange(ws, { version: 2, type: 'join_request', payload: entry.payload });
       assert.equal(response.type, 'error');
       assert.equal(response.payload?.code, 'invalid_event');
       assert.deepEqual(await health(), before);
@@ -164,7 +165,7 @@ void test('relay validates client messages and isolates message-processing failu
     const before = await health();
     for (let index = 0; index < 3; index += 1) {
       const invalid = await exchange(a, {
-        version: 1,
+        version: 2,
         type: 'join_request',
         payload: { roomId: 'shared-room', deviceId: {}, joinSecret: 'shared-secret' },
       });
@@ -175,18 +176,22 @@ void test('relay validates client messages and isolates message-processing failu
     assert.equal(joinedB.type, 'join_ok');
     const forwarded = receive(b);
     a.send(JSON.stringify({
-      version: 1,
-      type: 'peer_key_request',
+      version: 2,
+      type: 'sync_request',
       roomId: joinedA.roomId,
       deviceId: joinedA.deviceId,
       ticket: joinedA.ticket,
-      payload: { hello: 'world' },
+      payload: { box: {
+        version: 2, roomId: 'shared-room', courseSyncId: 'course', deviceId: 'device-a',
+        messageId: 'message', epoch: 'epoch', purpose: 'snapshot_request',
+        iv: 'A'.repeat(16), ciphertext: 'A'.repeat(24),
+      } },
     }));
     const message = await forwarded;
-    assert.equal(message.type, 'peer_key_request');
+    assert.equal(message.type, 'sync_request');
     assert.equal(message.deviceId, 'device-a');
     assert.equal(message.ticket, undefined);
-    assert.deepEqual(message.payload, { hello: 'world' });
+    assert.equal((message.payload?.box as Record<string, unknown>).purpose, 'snapshot_request');
     await close(a);
     await close(b);
   });
@@ -208,7 +213,7 @@ void test('relay validates client messages and isolates message-processing failu
     const joined = await join(ws, 'validation-room');
     assert.equal(joined.type, 'join_ok');
     const envelope = {
-      version: 1, roomId: joined.roomId, deviceId: joined.deviceId, ticket: joined.ticket,
+      version: 2, roomId: joined.roomId, deviceId: joined.deviceId, ticket: joined.ticket,
     };
     const secret = 'never-log-invalid-payload';
     const before = await health();
@@ -249,9 +254,9 @@ void test('relay validates client messages and isolates message-processing failu
     const joinedB = await join(b, 'queue-room', 'queue-b');
     assert.equal(joinedA.type, 'join_ok');
     assert.equal(joinedB.type, 'join_ok');
-    const authA = { version: 1, roomId: joinedA.roomId, deviceId: joinedA.deviceId, ticket: joinedA.ticket };
+    const authA = { version: 2, roomId: joinedA.roomId, deviceId: joinedA.deviceId, ticket: joinedA.ticket };
     b.send(JSON.stringify({
-      version: 1, type: 'push_subscribe', roomId: joinedB.roomId, deviceId: joinedB.deviceId, ticket: joinedB.ticket,
+      version: 2, type: 'push_subscribe', roomId: joinedB.roomId, deviceId: joinedB.deviceId, ticket: joinedB.ticket,
       payload: {
         subscription: {
           endpoint: 'https://push.example.test/subscription',
@@ -261,12 +266,16 @@ void test('relay validates client messages and isolates message-processing failu
       },
     }));
     const initial = await exchange(b, {
-      version: 1, type: 'catchup_request', roomId: joinedB.roomId, deviceId: joinedB.deviceId, ticket: joinedB.ticket,
+      version: 2, type: 'catchup_request', roomId: joinedB.roomId, deviceId: joinedB.deviceId, ticket: joinedB.ticket,
     });
     assert.equal(initial.type, 'catchup_response');
     assert.deepEqual(initial.payload?.messages, []);
     await close(b);
-    const payload = { kind: 'delta', envelope: { opId: 'queued-operation', applicationData: { value: 1 } } };
+    const payload = { box: {
+      version: 2, roomId: 'queue-room', courseSyncId: 'course', deviceId: 'queue-a',
+      messageId: 'queued-operation', epoch: 'epoch', purpose: 'delta',
+      iv: 'A'.repeat(16), ciphertext: 'A'.repeat(24),
+    } };
     a.send(JSON.stringify({ ...authA, type: 'sync_response', targetDeviceId: 'queue-b', payload }));
     assert.equal((await exchange(a, { ...authA, type: 'catchup_request' })).type, 'catchup_response');
 
@@ -274,7 +283,7 @@ void test('relay validates client messages and isolates message-processing failu
     const rejoined = await join(reconnected, 'queue-room', 'queue-b');
     assert.equal(rejoined.type, 'join_ok');
     const authB = {
-      version: 1, roomId: rejoined.roomId, deviceId: rejoined.deviceId, ticket: rejoined.ticket,
+      version: 2, roomId: rejoined.roomId, deviceId: rejoined.deviceId, ticket: rejoined.ticket,
     };
     const catchup = await exchange(reconnected, { ...authB, type: 'catchup_request', payload: { afterSeq: 0 } });
     assert.equal(catchup.type, 'catchup_response');
@@ -298,21 +307,54 @@ void test('relay validates client messages and isolates message-processing failu
     await close(reconnected);
   });
 
+  await t.test('stores only authenticated encrypted invitations and atomically redeems them once', async () => {
+    const ws = await connect();
+    const joined = await join(ws, 'invite-room', 'invite-device');
+    const inviteId = randomBytes(32).toString('base64url');
+    const box = {
+      version: 2, roomId: 'invite-room', courseSyncId: 'course', deviceId: 'invite-device',
+      messageId: inviteId, epoch: 'epoch', purpose: 'invite', iv: 'A'.repeat(16), ciphertext: 'A'.repeat(24),
+    };
+    const post = (path: string, body: unknown) => fetch(`http://127.0.0.1:${port}${path}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: timeout(),
+    });
+    const body = {
+      roomId: joined.roomId, deviceId: joined.deviceId, ticket: joined.ticket,
+      inviteId, box, expiresAt: Date.now() + 600_000,
+    };
+    assert.equal((await post('/invites', { ...body, ticket: 'wrong' })).status, 403);
+    assert.equal((await post('/invites', { ...body, secret: 'must-not-be-stored' })).status, 400);
+    assert.equal((await post('/invites', { ...body, box: { ...box, secret: 'must-not-be-stored' } })).status, 400);
+    assert.equal((await post('/invites', body)).status, 201);
+    const results = await Promise.all([
+      post('/invites/redeem', { inviteId }), post('/invites/redeem', { inviteId }),
+    ]);
+    assert.deepEqual(results.map((result) => result.status).sort(), [200, 410]);
+    const success = results.find((result) => result.status === 200);
+    assert.ok(success);
+    assert.deepEqual((await success.json() as { box: unknown }).box, box);
+    assert.equal((await post('/invites/redeem', { inviteId })).status, 410);
+    const old = await exchange(ws, { version: 1, type: 'join_request', payload: validPayload });
+    assert.equal(old.payload?.code, 'invalid_event');
+    assert.ok(!output.includes('must-not-be-stored'));
+    await close(ws);
+  });
+
   await t.test('still checks session, room and ticket authorization after validation', async () => {
     const ws = await connect();
     const unauthenticated = await exchange(ws, {
-      version: 1, type: 'ticket_refresh', roomId: 'auth-room', deviceId: 'auth-device', ticket: 'unknown',
+      version: 2, type: 'ticket_refresh', roomId: 'auth-room', deviceId: 'auth-device', ticket: 'unknown',
     });
     assert.equal(unauthenticated.payload?.code, 'not_joined');
     const joined = await join(ws, 'auth-room', 'auth-device');
     assert.equal(joined.type, 'join_ok');
     const wrongRoom = await exchange(ws, {
-      version: 1, type: 'ticket_refresh', roomId: 'other-room', deviceId: joined.deviceId, ticket: joined.ticket,
+      version: 2, type: 'ticket_refresh', roomId: 'other-room', deviceId: joined.deviceId, ticket: joined.ticket,
     });
     assert.equal(wrongRoom.payload?.code, 'invalid_event');
     const closed = once(ws, 'close', { signal: timeout() });
     const wrongTicket = await exchange(ws, {
-      version: 1, type: 'ticket_refresh', roomId: joined.roomId, deviceId: joined.deviceId, ticket: 'wrong-ticket',
+      version: 2, type: 'ticket_refresh', roomId: joined.roomId, deviceId: joined.deviceId, ticket: 'wrong-ticket',
     });
     assert.equal(wrongTicket.payload?.code, 'invalid_ticket');
     assert.equal((await closed)[0], 1008);
@@ -330,7 +372,7 @@ void test('relay validates client messages and isolates message-processing failu
     const before = await health();
     const closed = once(offender, 'close', { signal: timeout() });
     offender.send(JSON.stringify({
-      version: 1,
+      version: 2,
       type: 'ticket_refresh',
       roomId: joined.roomId,
       deviceId: joined.deviceId,
@@ -347,7 +389,7 @@ void test('relay validates client messages and isolates message-processing failu
     }
     assert.equal(stats.sessionCount, before.sessionCount - 1);
     const refreshed = await exchange(survivor, {
-      version: 1,
+      version: 2,
       type: 'ticket_refresh',
       roomId: survivorJoin.roomId,
       deviceId: survivorJoin.deviceId,
