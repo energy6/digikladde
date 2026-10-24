@@ -5,12 +5,12 @@ export const epoch = Date.parse('2026-01-01T10:00:00.000Z');
 type Teachers = { start: Page; landing: Page };
 
 export const test = base.extend<{ teachers: Teachers }>({
-  teachers: async ({ browser }, provideTeachers) => {
+  teachers: async ({ browser, baseURL }, provideTeachers) => {
     const contexts: BrowserContext[] = [];
     const errors: string[] = [];
     const createTeacher = async (name: string) => {
       const context = await browser.newContext({
-        baseURL: 'http://127.0.0.1:4173', locale: 'de-DE', timezoneId: 'Europe/Berlin',
+        baseURL, locale: 'de-DE', timezoneId: 'Europe/Berlin',
         serviceWorkers: 'block',
       });
       contexts.push(context);
@@ -18,7 +18,7 @@ export const test = base.extend<{ teachers: Teachers }>({
       page.on('pageerror', (error) => errors.push(error.message));
       await page.clock.install({ time: epoch });
       await page.clock.setFixedTime(epoch);
-      await page.goto('/');
+      await page.goto('./');
       await page.getByRole('button', { name: 'Open settings' }).click();
       const settings = page.getByRole('dialog', { name: 'Einstellungen', exact: true });
       await settings.getByRole('textbox', { name: 'Username', exact: true }).fill(name);

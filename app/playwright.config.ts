@@ -1,5 +1,16 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const useBuildArtifacts = process.env.E2E_USE_BUILD_ARTIFACTS === 'true';
+const relayImage = process.env.E2E_RELAY_IMAGE ?? 'digikladde-relay:e2e';
+if (useBuildArtifacts && !/^digikladde-relay:[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$/.test(relayImage)) {
+  throw new Error('E2E_RELAY_IMAGE must be a tagged local digikladde-relay image');
+}
+const appBasePath = useBuildArtifacts ? process.env.E2E_APP_BASE_PATH : '/';
+if (!appBasePath?.startsWith('/') || !appBasePath.endsWith('/')) {
+  throw new Error('E2E_APP_BASE_PATH must start and end with "/" when using build artifacts');
+}
+const baseURL = `http://127.0.0.1:4173${appBasePath}`;
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: false,
@@ -10,7 +21,7 @@ export default defineConfig({
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
     actionTimeout: 10_000,
-    baseURL: 'http://127.0.0.1:4173',
+    baseURL,
     locale: 'de-DE',
     timezoneId: 'Europe/Berlin',
     trace: 'retain-on-failure',
@@ -19,7 +30,9 @@ export default defineConfig({
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: [
     {
-      command: 'npm run -w relay build && npm run -w relay start',
+      command: useBuildArtifacts
+        ? `docker run --rm --init --pull=never --platform linux/amd64 --name digikladde-relay-e2e --publish 127.0.0.1:8080:8080 ${relayImage}`
+        : 'npm run -w relay build && npm run -w relay start',
       cwd: '..',
       url: 'http://127.0.0.1:8080/health',
       env: {
@@ -30,13 +43,14 @@ export default defineConfig({
         RELAY_WEB_PUSH_SUBJECT: '',
       },
       reuseExistingServer: false,
+      gracefulShutdown: { signal: 'SIGTERM', timeout: 5_000 },
       stdout: 'pipe',
       timeout: 120_000,
     },
     {
-      command: 'npm run build && npm run preview -- --host 127.0.0.1 --port 4173 --strictPort',
-      url: 'http://127.0.0.1:4173',
-      env: { GITHUB_ACTIONS: 'false' },
+      command: `${useBuildArtifacts ? '' : 'npm run build && '}npm run preview -- --host 127.0.0.1 --port 4173 --strictPort`,
+      url: baseURL,
+      env: { GITHUB_ACTIONS: useBuildArtifacts ? 'true' : 'false' },
       reuseExistingServer: false,
       stdout: 'pipe',
       timeout: 120_000,
