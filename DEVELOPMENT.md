@@ -26,7 +26,7 @@ Regeln der Demo-Daten:
 
 ## Developer Setup
 
-Workspace-Installationen laufen ab sofort ueber das Repo-Root mit npm Workspaces.
+Workspace-Installationen laufen ueber das Repo-Root mit npm Workspaces.
 
 ```bash
 npm ci

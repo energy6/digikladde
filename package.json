@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": "24.x",
-    "npm": "11.x"
+    "node": "^26.12.1",
+    "npm": "11.20.0"
   },
   "workspaces": [
     "app",
@@ -24,8 +24,14 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "eslint": "^10.12.0",
+    "eslint": "^10.13.0",
     "globals": "^17.13.0",
-    "typescript-eslint": "^8.71.1"
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.0"
+  },
+  "allowScripts": {
+    "core-js": true,
+    "esbuild": true,
+    "fsevents": true
   }
 }

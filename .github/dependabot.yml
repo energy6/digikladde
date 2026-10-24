@@ -12,6 +12,9 @@ updates:
       - dependency-name: "@types/node"
         update-types:
           - "version-update:semver-major"
+      - dependency-name: "typescript"
+        update-types:
+          - "version-update:semver-major"
     groups:
       workspace-tools-npm:
         patterns:
@@ -29,6 +32,9 @@ updates:
       - dependency-name: "@types/node"
         update-types:
           - "version-update:semver-major"
+      - dependency-name: "typescript"
+        update-types:
+          - "version-update:semver-major"
     groups:
       app-npm:
         patterns:
@@ -44,6 +50,9 @@ updates:
     open-pull-requests-limit: 5
     ignore:
       - dependency-name: "@types/node"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "typescript"
         update-types:
           - "version-update:semver-major"
     groups:

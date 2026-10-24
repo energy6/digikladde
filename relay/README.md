@@ -13,10 +13,11 @@ This service is transport-only:
 
 ## Run locally
 
+Install workspace dependencies from the repository root:
+
 ```bash
-cd relay
-npm install
-npm run dev
+npm ci
+npm run -w relay dev
 ```
 
 Relay defaults:

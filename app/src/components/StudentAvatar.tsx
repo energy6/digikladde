@@ -54,7 +54,9 @@ const StudentAvatar = ({ name, photoDataUrl, size, className }: StudentAvatarPro
         destroyOnHidden
         onCancel={() => setPreviewOpen(false)}
       >
-        <img src={photoDataUrl} alt={name || 'Schülerfoto'} className="student-photo-preview-image" />
+        <img src={photoDataUrl} alt={name || 'Schülerfoto'} className="
+          student-photo-preview-image
+        " />
       </Modal>
     </>
   );

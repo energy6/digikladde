@@ -417,7 +417,9 @@ const FlightEditModal = ({
               </Col>
             </Row>
             <div className="start-flight-altitude-maneuver-row">
-              <Form.Item label="Differenz (m)" className="start-flight-altitude-field">
+              <Form.Item label="Differenz (m)" className="
+                start-flight-altitude-field
+              ">
                 <InputNumber
                   min={0}
                   precision={0}
@@ -430,7 +432,9 @@ const FlightEditModal = ({
                 />
               </Form.Item>
               {showInlineAltitudeManeuvers ? (
-                <Form.Item label="Manöver" className="start-flight-maneuver-field">
+                <Form.Item label="Manöver" className="
+                  start-flight-maneuver-field
+                ">
                   <ManeuverDropdown
                     value={selectedManeuvers}
                     onChange={handleManeuversChange}
