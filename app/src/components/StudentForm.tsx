@@ -156,7 +156,9 @@ const StudentForm = ({ value, flightSchoolOptions = [], onChange }: Props) => {
         <div className="student-form-header">
           <Form.Item label="Foto" className="student-photo-field">
             <div className="student-photo-frame">
-              <StudentAvatar name={value.name} photoDataUrl={value.photoDataUrl} size={72} className="student-photo-avatar" />
+              <StudentAvatar name={value.name} photoDataUrl={value.photoDataUrl} size={72} className="
+                student-photo-avatar
+              " />
               <div className="student-photo-actions">
                 <Upload
                   accept="image/*"
@@ -177,20 +179,26 @@ const StudentForm = ({ value, flightSchoolOptions = [], onChange }: Props) => {
           </Form.Item>
 
           <div className="student-form-main-fields">
-            <Form.Item label={<>Name <span className="student-required-marker">*</span></>} className="student-form-item">
+            <Form.Item label={<>Name <span className="student-required-marker">*</span></>} className="
+              student-form-item
+            ">
               <Input
                 value={value.name}
                 onChange={(e) => onChange({ ...value, name: e.target.value })}
               />
             </Form.Item>
             <div className="student-form-row">
-              <Form.Item label={<>Schirm <span className="student-required-marker">*</span></>} className="student-form-item">
+              <Form.Item label={<>Schirm <span className="
+                student-required-marker
+              ">*</span></>} className="student-form-item">
                 <Input
                   value={value.glider}
                   onChange={(e) => onChange({ ...value, glider: e.target.value })}
                 />
               </Form.Item>
-              <Form.Item label={<>Farbe <span className="student-required-marker">*</span></>} className="student-form-item">
+              <Form.Item label={<>Farbe <span className="
+                student-required-marker
+              ">*</span></>} className="student-form-item">
                 <Input
                   value={value.color}
                   onChange={(e) => onChange({ ...value, color: e.target.value })}
@@ -201,7 +209,9 @@ const StudentForm = ({ value, flightSchoolOptions = [], onChange }: Props) => {
         </div>
 
         <div className="student-form-row">
-          <Form.Item label="Flüge" className="student-form-item student-flight-count-field">
+          <Form.Item label="Flüge" className="
+            student-form-item student-flight-count-field
+          ">
             <InputNumber
               min={0}
               value={value.totalFlights}
@@ -209,7 +219,9 @@ const StudentForm = ({ value, flightSchoolOptions = [], onChange }: Props) => {
               style={{ width: '100%' }}
             />
           </Form.Item>
-          <Form.Item label="Höhenmeter" className="student-form-item student-altitude-count-field">
+          <Form.Item label="Höhenmeter" className="
+            student-form-item student-altitude-count-field
+          ">
             <InputNumber
               min={0}
               precision={0}
@@ -218,7 +230,11 @@ const StudentForm = ({ value, flightSchoolOptions = [], onChange }: Props) => {
               style={{ width: '100%' }}
             />
           </Form.Item>
-          <Form.Item label={<>Flugschule <span className="student-required-marker">*</span></>} className="student-form-item student-flight-school-field">
+          <Form.Item label={<>Flugschule <span className="
+            student-required-marker
+          ">*</span></>} className="
+            student-form-item student-flight-school-field
+          ">
             <AutoComplete
               options={flightSchoolOptions.map((school) => ({ value: school }))}
               showSearch={{

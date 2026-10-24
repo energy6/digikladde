@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": "24.x",
-    "npm": "11.x"
+    "node": "^26.12.1",
+    "npm": "^11.20.0"
   },
   "scripts": {
     "dev": "tsx watch src/server.ts",
@@ -22,11 +22,11 @@
     "ws": "^8.22.0"
   },
   "devDependencies": {
-    "@types/node": "^24.19.1",
+    "@types/node": "^26.6.5",
     "@types/ws": "^8.18.2",
     "esbuild": "^0.28.2",
     "tsx": "^4.23.15",
-    "typescript": "^7.0.2"
+    "typescript": "~6.0.3"
   },
   "optionalDependencies": {
     "@esbuild/darwin-arm64": "^0.28.0",

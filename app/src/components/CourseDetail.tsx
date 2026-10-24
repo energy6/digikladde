@@ -1369,7 +1369,11 @@ const CourseDetail = () => {
   }
 
   return (
-    <div className={`course-detail${studentsMaximized ? ' course-detail--maximized' : ''}`}>
+    <div
+      className={studentsMaximized
+        ? 'course-detail course-detail--maximized'
+        : 'course-detail'}
+    >
       {!studentsMaximized && (
         <CourseHeader
           course={course}

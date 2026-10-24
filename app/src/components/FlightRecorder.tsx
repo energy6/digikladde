@@ -54,7 +54,7 @@ const FlightRecorder = () => {
 
   return (
     <div>
-      <h2 className="text-xl font-semibold mb-4">Flugaufzeichnung für {course.name}</h2>
+      <h2 className="mb-4 text-xl font-semibold">Flugaufzeichnung für {course.name}</h2>
       {!currentFlight ? (
         <div>
           <h3>Schüler auswählen</h3>
@@ -64,7 +64,7 @@ const FlightRecorder = () => {
               const student = course.students.find(s => s.id === studentId);
               setSelectedStudent(student || null);
             }}
-            className="border p-2 mb-4"
+            className="mb-4 border p-2"
           >
             <option value="">Schüler wählen</option>
             {course.students.map(student => (
@@ -74,7 +74,7 @@ const FlightRecorder = () => {
           {maneuversEnabled ? (
             <>
               <h3>Manöver auswählen</h3>
-              <div className="grid grid-cols-3 gap-2 mb-4">
+              <div className="mb-4 grid grid-cols-3 gap-2">
                 {maneuvers.map(maneuver => (
                   <label key={maneuver} className="flex items-center">
                     <input
@@ -92,7 +92,10 @@ const FlightRecorder = () => {
           <button
             onClick={startFlight}
             disabled={!selectedStudent}
-            className="bg-green-500 text-white px-4 py-2 rounded disabled:opacity-50"
+            className="
+              rounded-sm bg-green-500 px-4 py-2 text-white
+              disabled:opacity-50
+            "
           >
             Flug starten
           </button>
@@ -101,12 +104,16 @@ const FlightRecorder = () => {
         <div>
           <p>Flug läuft für {selectedStudent?.name}</p>
           <p>Start: {new Date(currentFlight.startTime).toLocaleTimeString()}</p>
-          <button onClick={endFlight} className="bg-red-500 text-white px-4 py-2 rounded">
+          <button onClick={endFlight} className="
+            rounded-sm bg-red-500 px-4 py-2 text-white
+          ">
             Flug beenden
           </button>
         </div>
       )}
-      <button onClick={() => navigate(`/course/${id}`)} className="mt-4 bg-gray-500 text-white px-4 py-2 rounded">
+      <button onClick={() => navigate(`/course/${id}`)} className="
+        mt-4 rounded-sm bg-gray-500 px-4 py-2 text-white
+      ">
         Zurück
       </button>
     </div>
