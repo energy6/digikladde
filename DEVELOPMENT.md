@@ -99,7 +99,8 @@ Persistenz nach Neuladen. Die Lehrer-Fixture deaktiviert den PWA-Service-Worker.
 Die separate `encryption.spec.ts` prueft zusaetzlich opake Sync-/Push- und
 Einladungs-Payloads, Einmal-Einloesung, Offline-Catch-up, erneuten Beitritt ohne
 Kursduplikate und Reconnect-Fehler ohne unbehandelte Browserfehler oder
-wiederholte Fehler-Toasts. Eine Reset-/Rekey-UI ist nicht enthalten.
+wiederholte Fehler-Toasts, auch bei verzoegertem Commit des Verbindungsstatus.
+Eine Reset-/Rekey-UI ist nicht enthalten.
 Ihr Push-Test aktiviert
 den echten gebauten Service Worker, speichert einen synthetischen lokalen
 Schluessel und injiziert Push-Events ohne offenen App-Tab. Nur die Lebensdauer
