@@ -12,6 +12,7 @@ import {
 } from './flightConflict';
 import { sanitizeFlightSchoolName } from './flightSchool';
 import { isIncomingNewer } from './isIncomingNewer';
+import { findCourseFlight, hasNewerOrEqualFlightDelete } from './syncFlightScope';
 
 type CoursePayload = {
   syncId?: string;
@@ -64,26 +65,6 @@ const ensureCourseBySyncId = async (courseSyncId: string): Promise<Course | null
   return existing ?? null;
 };
 
-const readUpdatedAt = (value: unknown): string | undefined => (
-  typeof value === 'object' && value !== null && typeof (value as { updatedAt?: unknown }).updatedAt === 'string'
-    ? (value as { updatedAt: string }).updatedAt
-    : undefined
-);
-
-const hasNewerOrEqualFlightDelete = async (syncId: string, incomingUpdatedAt?: string): Promise<boolean> => {
-  const deleteEvents = await db.syncEvents
-    .where('entitySyncId')
-    .equals(syncId)
-    .filter((event) => event.operation === 'flight_delete')
-    .toArray();
-
-  return deleteEvents.some((event) => {
-    const deletedAt = readUpdatedAt(event.payload) ?? event.opTs;
-    if (!incomingUpdatedAt) return true;
-    return Date.parse(deletedAt) >= Date.parse(incomingUpdatedAt);
-  });
-};
-
 const chooseEarlierIso = (left?: string | null, right?: string | null): string | undefined => {
   if (!left) return right ?? undefined;
   if (!right) return left;
@@ -96,7 +77,7 @@ const chooseLaterIso = (left?: string | null, right?: string | null): string | u
   return Date.parse(left) >= Date.parse(right) ? left : right;
 };
 
-const normalizeSameFlightUpdates = (payload: FlightPayload, existing: Flight, courseId: number, resolvedStudentId?: number): Partial<Flight> => {
+const normalizeSameFlightUpdates = (payload: FlightPayload, existing: Flight, resolvedStudentId?: number): Partial<Flight> => {
   const incomingRank = flightLifecycleRank(payload);
   const existingRank = flightLifecycleRank(existing);
   const isLifecycleRegression = incomingRank < existingRank;
@@ -110,7 +91,6 @@ const normalizeSameFlightUpdates = (payload: FlightPayload, existing: Flight, co
   const updates: Partial<Flight> = {
     updatedAt: chooseLaterIso(payload.updatedAt, existing.updatedAt),
     updatedByDeviceId: payload.updatedByDeviceId ?? existing.updatedByDeviceId,
-    courseId,
     studentId: resolvedStudentId ?? existing.studentId,
     maneuvers: hasOwnPayloadField(payload, 'maneuvers') ? mergeManeuvers(existing.maneuvers, payload.maneuvers) : existing.maneuvers,
     ratings: hasOwnPayloadField(payload, 'ratings') ? payload.ratings ?? undefined : existing.ratings,
@@ -303,12 +283,11 @@ const applyFlightUpsert = async (envelope: RelaySyncEnvelope): Promise<void> => 
   const syncId = payload.syncId;
   if (!syncId) return;
 
-  if (await hasNewerOrEqualFlightDelete(syncId, payload.updatedAt)) return;
-
   const course = await ensureCourseBySyncId(envelope.courseSyncId);
+  const existing = await findCourseFlight(syncId, course?.id);
   if (!course?.id) return;
 
-  const existing = await db.flights.where('syncId').equals(syncId).first();
+  if (await hasNewerOrEqualFlightDelete(envelope.courseSyncId, syncId, payload.updatedAt)) return;
 
   let resolvedStudentId: number | undefined;
 
@@ -386,7 +365,7 @@ const applyFlightUpsert = async (envelope: RelaySyncEnvelope): Promise<void> => 
   const isProgressingLifecycle = flightLifecycleRank(payload) > flightLifecycleRank(existing);
   if (!isProgressingLifecycle && !isIncomingNewer(payload.updatedAt, existing.updatedAt)) return;
 
-  await db.flights.update(existing.id, normalizeSameFlightUpdates(payload, existing, course.id, resolvedStudentId));
+  await db.flights.update(existing.id, normalizeSameFlightUpdates(payload, existing, resolvedStudentId));
 };
 
 const applyFlightDelete = async (envelope: RelaySyncEnvelope): Promise<void> => {
@@ -394,7 +373,8 @@ const applyFlightDelete = async (envelope: RelaySyncEnvelope): Promise<void> => 
   const syncId = payload.syncId;
   if (!syncId) return;
 
-  const existing = await db.flights.where('syncId').equals(syncId).first();
+  const course = await ensureCourseBySyncId(envelope.courseSyncId);
+  const existing = await findCourseFlight(syncId, course?.id);
   if (!existing?.id) return;
 
   // Only apply deletion if incoming is newer (prevents race conditions)
@@ -403,24 +383,26 @@ const applyFlightDelete = async (envelope: RelaySyncEnvelope): Promise<void> => 
   await db.flights.delete(existing.id);
 };
 
-export const applyRemoteDeltaEnvelope = async (envelope: RelaySyncEnvelope): Promise<void> => {
-  switch (envelope.operation) {
-    case 'course_upsert':
-      await applyCourseUpsert(envelope);
-      return;
-    case 'student_upsert':
-      await applyStudentUpsert(envelope);
-      return;
-    case 'student_delete':
-      await applyStudentDelete(envelope);
-      return;
-    case 'flight_upsert':
-      await applyFlightUpsert(envelope);
-      return;
-    case 'flight_delete':
-      await applyFlightDelete(envelope);
-      return;
-    default:
-      return;
-  }
-};
+export const applyRemoteDeltaEnvelope = async (envelope: RelaySyncEnvelope): Promise<void> => db.transaction(
+  'rw', db.courses, db.students, db.flights, db.syncEvents, async () => {
+    switch (envelope.operation) {
+      case 'course_upsert':
+        await applyCourseUpsert(envelope);
+        return;
+      case 'student_upsert':
+        await applyStudentUpsert(envelope);
+        return;
+      case 'student_delete':
+        await applyStudentDelete(envelope);
+        return;
+      case 'flight_upsert':
+        await applyFlightUpsert(envelope);
+        return;
+      case 'flight_delete':
+        await applyFlightDelete(envelope);
+        return;
+      default:
+        return;
+    }
+  },
+);

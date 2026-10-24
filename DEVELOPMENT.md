@@ -96,6 +96,9 @@ Die Tests pruefen Kurs-/Schuelerbearbeitung und einen geteilten Hoehenkurs mit z
 getrennten Lehrer-Browser-Kontexten: Start, vorgegebene und ergaenzte Manoever,
 Bewertungen, Landung, manueller/automatischer Abschluss, Flugdauer, Summen und
 Persistenz nach Neuladen. Die Lehrer-Fixture deaktiviert den PWA-Service-Worker.
+Beim QR-Dialog wartet sie vor dem Schliessen auf das Ende der Einblendanimation
+und danach auf den geschlossenen Dialog. So trifft der Klick keinen noch
+bewegten Schliessen-Button und ein erneutes Teilen wird nicht vom Overlay blockiert.
 Die separate `encryption.spec.ts` prueft zusaetzlich opake Sync-/Push- und
 Einladungs-Payloads, Einmal-Einloesung, Offline-Catch-up, erneuten Beitritt ohne
 Kursduplikate und Reconnect-Fehler ohne unbehandelte Browserfehler oder

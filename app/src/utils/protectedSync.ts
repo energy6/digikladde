@@ -3,6 +3,7 @@ import { decryptBox, type MessagePurpose } from './e2eCrypto';
 import { getRoomKey, replayId } from './roomKeys';
 import { applyRemoteDeltaEnvelope } from './syncApply';
 import { ingestRemoteDeltaEvent } from './syncEvents';
+import { assertDeltaFlightCourse } from './syncFlightScope';
 import { importCourseSnapshot } from './syncSnapshot';
 import { isCourseSyncSnapshot, isRelaySyncEnvelope } from './typeGuards';
 
@@ -30,6 +31,7 @@ export const applyProtectedSync = async (
     if (value.operation === 'course_upsert' && typeof value.payload === 'object' && value.payload !== null
       && 'syncId' in value.payload && value.payload.syncId !== box.courseSyncId) throw new Error('Kurs-Bindung ungültig.');
     apply = async () => {
+      await assertDeltaFlightCourse(value);
       const result = await ingestRemoteDeltaEvent(value);
       if (result.accepted) await applyRemoteDeltaEnvelope(value);
     };

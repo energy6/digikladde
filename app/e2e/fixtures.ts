@@ -87,7 +87,9 @@ export const shareCourse = async (start: Page, landing: Page) => {
   const share = start.getByRole('dialog', { name: 'Share-QR-Code' });
   const link = await share.getByRole('textbox', { name: 'Invitation link' }).inputValue();
   expect(new URL(link).origin).toBe('http://127.0.0.1:4173');
+  await expect(share).not.toHaveClass(/\bant-zoom-(?:appear|enter)\b/);
   await share.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(share).not.toBeVisible();
   await landing.goto(link);
   const join = landing.getByRole('dialog', { name: 'Kurs erstellen', exact: true });
   await expect(join.getByText('Shared-Kurs geladen', { exact: true })).toBeVisible();

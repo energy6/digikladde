@@ -20,6 +20,7 @@ import {
 } from './flightConflict';
 import { createId } from './idGenerator';
 import { isIncomingNewer } from './isIncomingNewer';
+import { findCourseFlight, hasNewerOrEqualFlightDelete } from './syncFlightScope';
 
 const ensureCourseSyncId = async (course: Course, deviceId: string, now: string): Promise<string> => {
   if (course.syncId) return course.syncId;
@@ -214,26 +215,6 @@ const upsertStudentBySyncId = async (
   return { ...existing, ...updates };
 };
 
-const readUpdatedAt = (value: unknown): string | undefined => (
-  typeof value === 'object' && value !== null && typeof (value as { updatedAt?: unknown }).updatedAt === 'string'
-    ? (value as { updatedAt: string }).updatedAt
-    : undefined
-);
-
-const hasNewerOrEqualFlightDelete = async (syncId: string, incomingUpdatedAt?: string): Promise<boolean> => {
-  const deleteEvents = await db.syncEvents
-    .where('entitySyncId')
-    .equals(syncId)
-    .filter((event) => event.operation === 'flight_delete')
-    .toArray();
-
-  return deleteEvents.some((event) => {
-    const deletedAt = readUpdatedAt(event.payload) ?? event.opTs;
-    if (!incomingUpdatedAt) return true;
-    return Date.parse(deletedAt) >= Date.parse(incomingUpdatedAt);
-  });
-};
-
 const chooseLaterIso = (left?: string, right?: string): string | undefined => {
   if (!left) return right;
   if (!right) return left;
@@ -249,7 +230,6 @@ const chooseEarlierIso = (left?: string, right?: string): string | undefined => 
 const normalizeSnapshotFlightUpdates = (
   incomingFlight: SharedFlightSnapshot,
   existingFlight: Flight,
-  localCourseId: number,
   studentId: number,
 ): Partial<Flight> => {
   const incomingRank = flightLifecycleRank(incomingFlight);
@@ -263,7 +243,6 @@ const normalizeSnapshotFlightUpdates = (
   const updates: Partial<Flight> = {
     updatedAt: chooseLaterIso(incomingFlight.updatedAt, existingFlight.updatedAt),
     updatedByDeviceId: incomingFlight.updatedByDeviceId ?? existingFlight.updatedByDeviceId,
-    courseId: localCourseId,
     studentId,
     maneuvers: mergeManeuvers(existingFlight.maneuvers, incomingFlight.maneuvers),
     ratings: incomingFlight.ratings,
@@ -316,6 +295,11 @@ export const importCourseSnapshot = async (
   const incomingCourse = snapshot.course;
 
   return db.transaction('rw', db.courses, db.students, db.flights, db.syncEvents, async () => {
+    const existingCourse = await db.courses.where('syncId').equals(incomingCourse.syncId).first();
+    for (const flight of snapshot.flights) {
+      await findCourseFlight(flight.syncId, existingCourse?.id);
+    }
+
     const studentMap = new Map<string, Student>();
 
     for (const student of incomingCourse.students) {
@@ -340,8 +324,6 @@ export const importCourseSnapshot = async (
         photoDataUrl: resolved?.photoDataUrl ?? student.photoDataUrl,
       };
     });
-
-    const existingCourse = await db.courses.where('syncId').equals(incomingCourse.syncId).first();
 
     let localCourseId: number;
     if (!existingCourse) {
@@ -384,9 +366,9 @@ export const importCourseSnapshot = async (
     for (const incomingFlight of snapshot.flights) {
       const resolvedStudent = studentMap.get(incomingFlight.studentSyncId);
       if (!resolvedStudent?.id) continue;
-      if (await hasNewerOrEqualFlightDelete(incomingFlight.syncId, incomingFlight.updatedAt)) continue;
+      if (await hasNewerOrEqualFlightDelete(incomingCourse.syncId, incomingFlight.syncId, incomingFlight.updatedAt)) continue;
 
-      const existingFlight = await db.flights.where('syncId').equals(incomingFlight.syncId).first();
+      const existingFlight = await findCourseFlight(incomingFlight.syncId, localCourseId);
 
       if (!existingFlight) {
         const incomingInsert: Flight = {
@@ -474,7 +456,6 @@ export const importCourseSnapshot = async (
       await db.flights.update(Number(existingFlight.id), normalizeSnapshotFlightUpdates(
         incomingFlight,
         existingFlight,
-        localCourseId,
         resolvedStudent.id,
       ));
       importedFlights += 1;
