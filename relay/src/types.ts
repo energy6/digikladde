@@ -28,20 +28,6 @@ export type RelayEnvelope = {
   payload?: Record<string, unknown>;
 };
 
-export type JoinRequestPayload = {
-  roomId: string;
-  deviceId: string;
-  joinSecret: string;
-};
-
-export type CatchupRequestPayload = {
-  afterSeq?: number;
-};
-
-export type CatchupAckPayload = {
-  throughSeq?: number;
-};
-
 export type QueuedRelayMessage = {
   seq: number;
   ts: number;
@@ -52,15 +38,6 @@ export type QueuedRelayMessage = {
 
 export type CatchupResponsePayload = {
   messages: QueuedRelayMessage[];
-};
-
-export type PushSubscriptionPayload = {
-  endpoint: string;
-  expirationTime?: number | null;
-  keys: {
-    p256dh: string;
-    auth: string;
-  };
 };
 
 export type RelayErrorCode =
@@ -91,3 +68,9 @@ export type RelayConfig = {
   webPushPrivateKey?: string;
   webPushSubject?: string;
 };
+export type {
+  JoinRequestPayload,
+  CatchupRequestPayload,
+  CatchupAckPayload,
+  PushSubscriptionPayload,
+} from './protocol.js';
