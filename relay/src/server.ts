@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { URL } from 'node:url';
-import { WebSocketServer, type WebSocket } from 'ws';
+import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import webPush from 'web-push';
 import { relayConfig } from './config.js';
+import { clientEnvelopeSchema, type ClientMessage } from './protocol.js';
 import {
   ackQueuedMessagesForDevice,
   attachSessionToRoom,
@@ -29,10 +30,6 @@ import {
   type Session,
 } from './state.js';
 import type {
-  CatchupAckPayload,
-  CatchupRequestPayload,
-  JoinRequestPayload,
-  PushSubscriptionPayload,
   RelayEnvelope,
   RelayErrorCode,
 } from './types.js';
@@ -98,16 +95,6 @@ const sendError = (session: Session, code: RelayErrorCode, message: string, clos
   }
 };
 
-const parseEnvelope = (raw: string): RelayEnvelope | null => {
-  try {
-    const parsed = JSON.parse(raw) as RelayEnvelope;
-    if (!parsed || parsed.version !== 1 || typeof parsed.type !== 'string') return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-};
-
 const requireJoinedSession = (session: Session, envelope: RelayEnvelope): { roomId: string; deviceId: string } | null => {
   if (!session.roomId || !session.deviceId || !session.ticket || !session.ticketExpiresAt) {
     sendError(session, 'not_joined', 'Session ist keinem Raum beigetreten.');
@@ -127,16 +114,8 @@ const requireJoinedSession = (session: Session, envelope: RelayEnvelope): { room
   return { roomId: session.roomId, deviceId: session.deviceId };
 };
 
-const handleJoinRequest = (session: Session, envelope: RelayEnvelope) => {
-  const payload = envelope.payload as Partial<JoinRequestPayload> | undefined;
-  const roomId = payload?.roomId?.trim();
-  const deviceId = payload?.deviceId?.trim();
-  const joinSecret = payload?.joinSecret?.trim();
-
-  if (!roomId || !deviceId || !joinSecret) {
-    sendError(session, 'invalid_event', 'join_request ist unvollstaendig.', true);
-    return;
-  }
+const handleJoinRequest = (session: Session, envelope: ClientMessage<'join_request'>) => {
+  const { roomId, deviceId, joinSecret } = envelope.payload;
 
   const room = getOrCreateRoom(roomId, joinSecret);
 
@@ -202,7 +181,7 @@ const handleTicketRefresh = (session: Session, envelope: RelayEnvelope) => {
   });
 };
 
-const handleCatchupRequest = (session: Session, envelope: RelayEnvelope) => {
+const handleCatchupRequest = (session: Session, envelope: ClientMessage<'catchup_request'>) => {
   const joined = requireJoinedSession(session, envelope);
   if (!joined) return;
 
@@ -212,9 +191,7 @@ const handleCatchupRequest = (session: Session, envelope: RelayEnvelope) => {
     return;
   }
 
-  const payload = envelope.payload as Partial<CatchupRequestPayload> | undefined;
-  const rawAfterSeq = Number(payload?.afterSeq ?? 0);
-  const afterSeq = Number.isFinite(rawAfterSeq) && rawAfterSeq > 0 ? Math.floor(rawAfterSeq) : 0;
+  const afterSeq = envelope.payload?.afterSeq ?? 0;
   const messages = listQueuedMessagesForDevice(room, joined.deviceId, afterSeq);
 
   send(session, {
@@ -226,33 +203,17 @@ const handleCatchupRequest = (session: Session, envelope: RelayEnvelope) => {
   });
 };
 
-const handleCatchupAck = (session: Session, envelope: RelayEnvelope) => {
+const handleCatchupAck = (session: Session, envelope: ClientMessage<'catchup_ack'>) => {
   const joined = requireJoinedSession(session, envelope);
   if (!joined) return;
 
   const room = getRoom(joined.roomId);
   if (!room) return;
 
-  const payload = envelope.payload as Partial<CatchupAckPayload> | undefined;
-  const rawThroughSeq = Number(payload?.throughSeq ?? 0);
-  if (!Number.isFinite(rawThroughSeq) || rawThroughSeq <= 0) return;
-
-  ackQueuedMessagesForDevice(room, joined.deviceId, Math.floor(rawThroughSeq));
+  ackQueuedMessagesForDevice(room, joined.deviceId, envelope.payload.throughSeq);
 };
 
-const isPushSubscriptionPayload = (value: unknown): value is PushSubscriptionPayload => {
-  if (!isRecord(value)) return false;
-  const keys = value.keys;
-  return (
-    typeof value.endpoint === 'string'
-    && value.endpoint.length > 0
-    && isRecord(keys)
-    && typeof keys.p256dh === 'string'
-    && typeof keys.auth === 'string'
-  );
-};
-
-const handlePushSubscribe = (session: Session, envelope: RelayEnvelope) => {
+const handlePushSubscribe = (session: Session, envelope: ClientMessage<'push_subscribe'>) => {
   const joined = requireJoinedSession(session, envelope);
   if (!joined) return;
 
@@ -262,13 +223,7 @@ const handlePushSubscribe = (session: Session, envelope: RelayEnvelope) => {
     return;
   }
 
-  const subscription = envelope.payload?.subscription;
-  if (!isPushSubscriptionPayload(subscription)) {
-    sendError(session, 'invalid_event', 'push_subscribe ist unvollstaendig.');
-    return;
-  }
-
-  setPushSubscriptionForDevice(room, joined.deviceId, subscription);
+  setPushSubscriptionForDevice(room, joined.deviceId, envelope.payload.subscription);
 };
 
 const handlePushUnsubscribe = (session: Session, envelope: RelayEnvelope) => {
@@ -518,7 +473,7 @@ wss.on('connection', (ws, session: Session) => {
     session.lastSeenAt = now();
   });
 
-  ws.on('message', (raw) => {
+  const handleMessage = (raw: RawData) => {
     session.lastSeenAt = now();
 
     if (!markEventAndCheckRate(session.ip)) {
@@ -534,11 +489,21 @@ wss.on('connection', (ws, session: Session) => {
           ? Buffer.concat(raw).toString('utf8')
           : Buffer.from(new Uint8Array(raw)).toString('utf8');
 
-    const parsed = parseEnvelope(rawText);
-    if (!parsed) {
+    let input: unknown;
+    try {
+      input = JSON.parse(rawText);
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
       sendError(session, 'invalid_json', 'Nachricht ist kein gueltiges Relay-JSON.');
       return;
     }
+
+    const result = clientEnvelopeSchema.safeParse(input);
+    if (!result.success) {
+      sendError(session, 'invalid_event', 'Nachricht entspricht nicht dem Relay-Protokoll.');
+      return;
+    }
+    const parsed = result.data;
 
     if (parsed.type === 'join_request') {
       handleJoinRequest(session, parsed);
@@ -571,6 +536,18 @@ wss.on('connection', (ws, session: Session) => {
     }
 
     forwardEvent(session, parsed);
+  };
+
+  ws.on('message', (raw) => {
+    try {
+      handleMessage(raw);
+    } catch (error) {
+      log('error', 'relay message handling failed', {
+        sessionId: session.id,
+        error: error instanceof TypeError ? 'TypeError' : 'Unexpected error',
+      });
+      ws.close(1011, 'Internal relay error');
+    }
   });
 
   ws.on('close', () => {

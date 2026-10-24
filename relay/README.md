@@ -11,6 +11,13 @@ This service is transport-only:
 - Forwards peer events in a room
 - Does not decrypt E2E payloads
 
+Join payloads must be objects with nonempty string fields `roomId`, `deviceId`
+and `joinSecret`. Strings are trimmed before use. Invalid join data receives an
+`invalid_event` error without changing room membership or closing the connection,
+so clients can retry on the same socket. Existing rate limits still apply.
+Unexpected synchronous message-processing errors are logged without message
+contents or credentials and close only the affected connection with code 1011.
+
 ## Run locally
 
 Install workspace dependencies from the repository root:
@@ -37,6 +44,10 @@ The node:test suite covers queue delivery/ACKs, deduplication, retention, sessio
 isolation, rate limits, buffer limits and configuration. Time boundaries use
 explicit timestamps rather than real waiting. Configuration cases run in isolated
 processes, independent of the caller's relay environment variables.
+
+Server regression tests start an isolated loopback relay process. They cover
+malformed joins, retries on the same socket, preserved sessions, forwarding and
+connection-local exception handling, including continued health availability.
 
 `npm run test:e2e` additionally starts a real local relay and tests course sharing
 and flight recording between two browser contexts. See
