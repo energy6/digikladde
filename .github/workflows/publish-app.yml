@@ -9,14 +9,14 @@ on:
       - "eslint.base.config.js"
       - "package.json"
       - "package-lock.json"
-      - ".github/workflows/deploy-pages.yml"
+      - ".github/workflows/publish-app.yml"
   pull_request:
     paths:
       - "app/**"
       - "eslint.base.config.js"
       - "package.json"
       - "package-lock.json"
-      - ".github/workflows/deploy-pages.yml"
+      - ".github/workflows/publish-app.yml"
   workflow_dispatch:
 
 permissions:
@@ -60,14 +60,14 @@ jobs:
         run: npm run build:app
 
       - name: Upload Pages artifact
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'push'
         uses: actions/upload-pages-artifact@v5
         with:
           path: app/dist
 
   deploy:
     needs: build
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
