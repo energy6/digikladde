@@ -1431,6 +1431,7 @@ const CourseDetail = () => {
               )}
               <Button
                 key="add"
+                aria-label="Add student"
                 type="primary"
                 icon={<PlusOutlined />}
                 onClick={() => {

@@ -37,6 +37,7 @@ type FlightEditModalProps = {
 };
 
 type FlightDetailFieldProps = {
+  ariaLabel: string;
   label: ReactNode;
   value: string;
   options: string[];
@@ -94,9 +95,10 @@ const isBeforeStart = (
   return Date.parse(nextEndIso) < Date.parse(nextStartIso);
 };
 
-const FlightDetailField = ({ label, value, options, onChange }: FlightDetailFieldProps) => (
+const FlightDetailField = ({ ariaLabel, label, value, options, onChange }: FlightDetailFieldProps) => (
   <Form.Item label={label}>
     <AutoComplete
+      aria-label={ariaLabel}
       value={value}
       options={options.map((option) => ({ value: option }))}
       showSearch={{ filterOption: filterFlightDetailOption }}
@@ -275,6 +277,7 @@ const FlightEditModal = ({
             <Button danger icon={<FontAwesomeIcon icon={faTrashCan} />} disabled={!flight || saving} />
           </Popconfirm>
           <Button
+            aria-label="Save flight"
             type="primary"
             icon={<FontAwesomeIcon icon={faFloppyDisk} />}
             loading={saving}
@@ -332,6 +335,7 @@ const FlightEditModal = ({
             <Col span={12}>
               <FlightDetailField
                 label="Gelände"
+                ariaLabel="Terrain"
                 value={details.terrain ?? ''}
                 options={flightDetailOptions.terrain ?? []}
                 onChange={(value) => setDetails((currentDetails) => ({ ...currentDetails, terrain: value }))}
@@ -340,6 +344,7 @@ const FlightEditModal = ({
             <Col span={12}>
               <FlightDetailField
                 label="Lehrer"
+                ariaLabel="Teacher"
                 value={details.teacher ?? ''}
                 options={flightDetailOptions.teacher ?? []}
                 onChange={(value) => setDetails((currentDetails) => ({ ...currentDetails, teacher: value }))}
@@ -368,6 +373,7 @@ const FlightEditModal = ({
               <Col span={12}>
                 <FlightDetailField
                   label="Startplatz"
+                  ariaLabel="Takeoff site"
                   value={details.startPlace ?? ''}
                   options={flightDetailOptions.startPlace ?? []}
                   onChange={(value) => setDetails((currentDetails) => ({ ...currentDetails, startPlace: value }))}
@@ -376,6 +382,7 @@ const FlightEditModal = ({
               <Col span={12}>
                 <FlightDetailField
                   label="Lehrer am Startplatz"
+                  ariaLabel="Takeoff teacher"
                   value={details.startTeacher ?? ''}
                   options={flightDetailOptions.startTeacher ?? []}
                   onChange={(value) => setDetails((currentDetails) => ({ ...currentDetails, startTeacher: value }))}
@@ -386,6 +393,7 @@ const FlightEditModal = ({
               <Col span={12}>
                 <FlightDetailField
                   label="Landeplatz"
+                  ariaLabel="Landing site"
                   value={details.landPlace ?? ''}
                   options={flightDetailOptions.landPlace ?? []}
                   onChange={(value) => setDetails((currentDetails) => ({ ...currentDetails, landPlace: value }))}
@@ -410,6 +418,7 @@ const FlightEditModal = ({
                       </Tooltip>
                     </Space>
                   )}
+                  ariaLabel="Landing teacher"
                   value={details.landTeacher ?? ''}
                   options={flightDetailOptions.landTeacher ?? []}
                   onChange={(value) => setDetails((currentDetails) => ({ ...currentDetails, landTeacher: value }))}
@@ -473,6 +482,7 @@ const FlightEditModal = ({
                     }}
                   >
                     <Slider
+                      ariaLabelForHandle={`Rating: ${ratingKey === 'Start' ? 'Takeoff' : ratingKey === 'Landung' ? 'Landing' : ratingKey}`}
                       min={0}
                       max={10}
                       step={1}

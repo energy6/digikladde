@@ -27,3 +27,6 @@ dist-ssr
 docs/media/page@*.webm
 
 .vite/
+playwright-report/
+test-results/
+coverage/

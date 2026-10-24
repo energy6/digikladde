@@ -58,6 +58,7 @@ const ActiveStudentListItem = ({
             <Button danger icon={<FontAwesomeIcon icon={faBan} />} disabled={!flightId} />
           </Popconfirm>
           <Button
+            aria-label={`Mark landing: ${student.name}`}
             type="primary"
             danger
             onClick={() => {

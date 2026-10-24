@@ -5,14 +5,20 @@ import { relayConfig } from './config.js';
 import {
   ackQueuedMessagesForDevice,
   attachSessionToRoom,
+  bufferMessage,
+  canOpenConnectionForIp,
   createSession,
   deleteSession,
   getOrCreateRoom,
   getRoom,
+  getRoomSessions,
+  getRoomSessionsByDevice,
   listQueuedMessagesForDevice,
+  markEventAndCheckRate,
   pruneExpiredRoomState,
   queueMessageForDevice,
   resetStateForTests,
+  registerJoinAttemptAndCheckLimit,
   snapshotStats,
 } from './state.js';
 
@@ -167,4 +173,52 @@ void test('keeps empty rooms until retention expires', () => {
 
   assert.equal(getRoom('room_a'), undefined);
   assert.equal(snapshotStats().roomCount, 0);
+});
+
+void test('tracks sessions by room/device and frees connection slots on disconnect', () => {
+  const room = getOrCreateRoom('a', 'secret');
+  const other = getOrCreateRoom('b', 'different');
+  const sessions = Array.from({ length: relayConfig.maxConnectionsPerIp }, () => createSession(createFakeWebSocket(), 'local'));
+  assert.equal(canOpenConnectionForIp('local'), false);
+  attachSessionToRoom(sessions[0], room, 'teacher-a', 'ticket', 60_000);
+  attachSessionToRoom(sessions[1], other, 'teacher-b', 'ticket', 60_000);
+  assert.deepEqual(getRoomSessions(room), [sessions[0]]);
+  assert.deepEqual(getRoomSessionsByDevice(room, 'teacher-b'), []);
+  deleteSession(sessions[0]);
+  assert.equal(canOpenConnectionForIp('local'), true);
+  assert.deepEqual(getRoomSessions(room), []);
+  assert.deepEqual(getRoomSessionsByDevice(room, 'teacher-a'), []);
+  assert.deepEqual(getRoomSessions(other), [sessions[1]]);
+});
+
+void test('enforces event/join limits at exact minute boundaries without waiting', () => {
+  const room = getOrCreateRoom('a', 'secret');
+  for (let i = 0; i < relayConfig.maxJoinPerMinutePerRoom; i++) {
+    assert.equal(registerJoinAttemptAndCheckLimit(room, 100_000), true);
+  }
+  assert.equal(registerJoinAttemptAndCheckLimit(room, 160_000), false);
+  assert.equal(registerJoinAttemptAndCheckLimit(room, 160_001), true);
+  for (let i = 0; i < relayConfig.maxEventsPerMinutePerIp; i++) {
+    assert.equal(markEventAndCheckRate('local', 100_000), true);
+  }
+  assert.equal(markEventAndCheckRate('local', 160_000), false);
+  assert.equal(markEventAndCheckRate('local', 160_001), true);
+  assert.equal(markEventAndCheckRate('other', 100_000), true);
+});
+
+void test('bounds replay buffers and acknowledges only the requested device and sequences', () => {
+  const room = getOrCreateRoom('a', 'secret');
+  for (let i = 0; i <= relayConfig.messageBufferLimitPerRoom; i++) {
+    bufferMessage(room, { ts: i, type: 'sync_response' });
+  }
+  assert.equal(room.messageBuffer.length, relayConfig.messageBufferLimitPerRoom);
+  assert.equal(room.messageBuffer[0].ts, 1);
+  for (const device of ['a', 'b']) {
+    for (let i = 0; i < 3; i++) queueMessageForDevice(room, device, { ts: i, type: 'sync_response', fromDeviceId: 'sender', payload: {} });
+  }
+  ackQueuedMessagesForDevice(room, 'a', 2);
+  assert.deepEqual(listQueuedMessagesForDevice(room, 'a', 0).map((message) => message.seq), [3]);
+  assert.deepEqual(listQueuedMessagesForDevice(room, 'b', 1).map((message) => message.seq), [2, 3]);
+  queueMessageForDevice(room, 'a', { ts: 4, type: 'sync_response', fromDeviceId: 'sender', payload: {} });
+  assert.deepEqual(listQueuedMessagesForDevice(room, 'a', 0).map((message) => message.seq), [3, 4]);
 });

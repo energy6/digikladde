@@ -122,8 +122,8 @@ const CourseHeader = ({ course, prev, next, editable = false, onCourseUpdated }:
       {compactHeader ? (
         <Space orientation="vertical" size="small" style={{ width: '100%' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
-            {prev && <Button type="link" icon={<LeftOutlined />} onClick={prev} />}
-            {next && <Button type="link" icon={<RightOutlined />} onClick={next} />}
+            {prev && <Button aria-label="Previous page" type="link" icon={<LeftOutlined />} onClick={prev} />}
+            {next && <Button aria-label="Next page" type="link" icon={<RightOutlined />} onClick={next} />}
           </div>
           {titleContent}
         </Space>
@@ -131,11 +131,11 @@ const CourseHeader = ({ course, prev, next, editable = false, onCourseUpdated }:
         <Space orientation="vertical" size="small" style={{ width: '100%' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center', columnGap: 12 }}>
             <div style={{ justifySelf: 'start' }}>
-              {prev && <Button type="link" icon={<LeftOutlined />} onClick={prev} />}
+              {prev && <Button aria-label="Previous page" type="link" icon={<LeftOutlined />} onClick={prev} />}
             </div>
             {titleContent}
             <div style={{ justifySelf: 'end' }}>
-              {next && <Button type="link" icon={<RightOutlined />} onClick={next} />}
+              {next && <Button aria-label="Next page" type="link" icon={<RightOutlined />} onClick={next} />}
             </div>
           </div>
         </Space>

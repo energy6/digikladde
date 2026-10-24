@@ -8,6 +8,10 @@
     "npm": "^11.20.0"
   },
   "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "typecheck:tests": "tsc -p tsconfig.tests.json",
     "dev": "vite --host",
     "build": "tsc -b && vite build",
     "lint": "eslint . --max-warnings 0",
@@ -32,6 +36,9 @@
     "react-router-dom": "^7.18.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "fake-indexeddb": "^6.2.4",
+    "vitest": "^4.1.0",
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",

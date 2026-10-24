@@ -183,6 +183,7 @@ const StudentForm = ({ value, flightSchoolOptions = [], onChange }: Props) => {
               student-form-item
             ">
               <Input
+                aria-label="Student name"
                 value={value.name}
                 onChange={(e) => onChange({ ...value, name: e.target.value })}
               />
@@ -192,6 +193,7 @@ const StudentForm = ({ value, flightSchoolOptions = [], onChange }: Props) => {
                 student-required-marker
               ">*</span></>} className="student-form-item">
                 <Input
+                  aria-label="Glider"
                   value={value.glider}
                   onChange={(e) => onChange({ ...value, glider: e.target.value })}
                 />
@@ -200,6 +202,7 @@ const StudentForm = ({ value, flightSchoolOptions = [], onChange }: Props) => {
                 student-required-marker
               ">*</span></>} className="student-form-item">
                 <Input
+                  aria-label="Color"
                   value={value.color}
                   onChange={(e) => onChange({ ...value, color: e.target.value })}
                 />
@@ -213,6 +216,7 @@ const StudentForm = ({ value, flightSchoolOptions = [], onChange }: Props) => {
             student-form-item student-flight-count-field
           ">
             <InputNumber
+              aria-label="Flight count"
               min={0}
               value={value.totalFlights}
               onChange={(v) => onChange({ ...value, totalFlights: v ?? 0 })}
@@ -223,6 +227,7 @@ const StudentForm = ({ value, flightSchoolOptions = [], onChange }: Props) => {
             student-form-item student-altitude-count-field
           ">
             <InputNumber
+              aria-label="Total altitude (m)"
               min={0}
               precision={0}
               value={value.totalAltitudeMeters ?? 0}

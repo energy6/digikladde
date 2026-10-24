@@ -25,6 +25,23 @@ Relay defaults:
 - HTTP health: `http://127.0.0.1:8080/health`
 - WebSocket: `ws://127.0.0.1:8080/relay`
 
+## Unit tests
+
+From the repository root:
+
+```bash
+npm run test:relay
+```
+
+The node:test suite covers queue delivery/ACKs, deduplication, retention, session
+isolation, rate limits, buffer limits and configuration. Time boundaries use
+explicit timestamps rather than real waiting. Configuration cases run in isolated
+processes, independent of the caller's relay environment variables.
+
+`npm run test:e2e` additionally starts a real local relay and tests course sharing
+and flight recording between two browser contexts. See
+[Development](../DEVELOPMENT.md#automatisierte-tests) for setup and diagnostics.
+
 ## Smoke test
 
 Start relay first, then:

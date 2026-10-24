@@ -53,6 +53,9 @@ jobs:
       - name: Typecheck relay
         run: npm run typecheck:relay
 
+      - name: Test relay
+        run: npm run test:relay
+
       - name: Build relay bundle
         run: npm run build:relay
 

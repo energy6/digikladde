@@ -8,7 +8,7 @@ export default defineConfig([
   ...createTypeScriptBaseConfig({
     tsconfigRootDir: import.meta.dirname,
     browser: true,
-    ignores: ['scripts'],
+    ignores: ['scripts', 'playwright-report', 'test-results', 'coverage'],
   }),
   {
     files: ['**/*.{ts,tsx}'],

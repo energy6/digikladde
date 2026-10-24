@@ -41,6 +41,7 @@ const AddStudentModal = ({
       open={open}
       onCancel={onCancel}
       onOk={onOk}
+      okButtonProps={{ 'aria-label': 'Save student' }}
       okText={<FontAwesomeIcon icon={faFloppyDisk} />}
       cancelButtonProps={{ style: { display: 'none' } }}
     >
@@ -48,6 +49,7 @@ const AddStudentModal = ({
         <Text strong>Wähle vorhandenen Schüler oder erstelle einen neuen.</Text>
         <Text type="secondary">Aktive Flugschule: {activeFlightSchool}</Text>
         <Select
+          aria-label="Select student"
           placeholder="Schüler auswählen"
           value={addMode === 'new' ? '__new__' : (selectedStudentId ?? undefined)}
           showSearch={{

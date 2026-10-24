@@ -220,12 +220,14 @@ const SettingsModal = ({ open, initialValues, onCancel, onSave }: SettingsModalP
       open={open}
       onCancel={onCancel}
       onOk={handleSave}
+      okButtonProps={{ 'aria-label': 'Save settings' }}
       okText={<FontAwesomeIcon icon={faFloppyDisk} />}
       cancelButtonProps={{ style: { display: 'none' } }}
     >
       <Space orientation="vertical" size="small" style={{ width: '100%' }}>
         <Text strong>Benutzername</Text>
         <Input
+          aria-label="Username"
           value={username}
           placeholder="Benutzername"
           onChange={(event) => {

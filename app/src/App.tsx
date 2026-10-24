@@ -180,7 +180,7 @@ function App() {
             <Button
               type="text"
               icon={<SettingOutlined />}
-              aria-label="Einstellungen öffnen"
+              aria-label="Open settings"
               title="Einstellungen öffnen"
               onClick={() => setSettingsModalOpen(true)}
               style={{ color: '#fff' }}

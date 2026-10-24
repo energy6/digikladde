@@ -46,6 +46,7 @@ const PendingStudentListItem = ({
       actions={[
         <Space orientation="horizontal" size="small" align="center">
           <Button
+            aria-label={`Undo landing: ${student.name}`}
             onClick={() => {
               if (flightId) {
                 onResumeFlight(flightId);
@@ -55,6 +56,7 @@ const PendingStudentListItem = ({
             disabled={!flightId}
           />
           <Button
+            aria-label={`Finalize flight: ${student.name}`}
             onClick={() => {
               if (flightId) {
                 onTerminateFlight(flightId);
