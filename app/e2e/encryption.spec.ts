@@ -90,6 +90,24 @@ test('reports automatic reconnect failures without uncaught errors or toasts and
   const warnings: string[] = [];
   landing.on('console', (entry) => { if (entry.type() === 'warning') warnings.push(entry.text()); });
   await landing.goto('about:blank');
+  await landing.addInitScript(() => {
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- The database receiver is forwarded with apply.
+    const original = IDBDatabase.prototype.transaction;
+    IDBDatabase.prototype.transaction = function (...args) {
+      const transaction = original.apply(this, args);
+      if (transaction.mode === 'readwrite' && transaction.objectStoreNames.contains('shareSessions')) {
+        // Let the join fail before the real state-write transaction commits.
+        transaction.commit = () => {};
+        const store = transaction.objectStore('shareSessions');
+        const until = performance.now() + 100;
+        const keepAlive = () => {
+          if (performance.now() < until) store.get(0).onsuccess = keepAlive;
+        };
+        keepAlive();
+      }
+      return transaction;
+    };
+  });
   let attempts = 0;
   let mode: 'close' | 'deny' | 'pending' | 'available' = 'close';
   await landing.routeWebSocket('**/relay', (socket) => {

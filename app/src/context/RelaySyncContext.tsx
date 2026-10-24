@@ -829,8 +829,7 @@ export const RelaySyncProvider = ({ children, username, relayBaseUrl, pushNotifi
     ws.onmessage = handleWsMessage;
     ws.onclose = handleWsClose;
     ws.onerror = handleWsError;
-    await connectingState;
-    await ready;
+    await Promise.all([connectingState, ready]);
   }, [
     closeCourseConnection,
     emitCourseChange,

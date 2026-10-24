@@ -127,7 +127,7 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
-      - run: npm exec -w app -- playwright install --with-deps chromium
+      - run: npm exec -w app -- playwright install --with-deps --only-shell chromium
       - run: npm run test:e2e
         env:
           E2E_USE_BUILD_ARTIFACTS: 'true'
