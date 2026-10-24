@@ -146,6 +146,15 @@ transaction. Duplicate delivery has no second effect. Invalid messages stop
 the connection with an explicit sync error and are not ACKed. Delayed valid
 offline messages remain eligible for the existing conflict rules.
 
+Course-bound encryption does not replace object-level authorization. Clients
+resolve the authenticated course sync ID to a local course ID and check flight
+ownership before any delta ingestion or snapshot writes. A flight sync ID already
+assigned to another course rejects the entire message or snapshot without partial
+imports, replacement flights, events or replay markers. Flight deletion
+tombstones apply only within their course. Global student records may still be
+updated across courses; student membership changes remain scoped to the target
+course.
+
 For offline recipients, the relay forwards the sender's encrypted `push` box
 inside ordinary Web Push: `{ version: 2, roomId, box? }`. It never constructs
 notification text from sync data. The receiving service worker loads the local

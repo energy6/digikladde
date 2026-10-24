@@ -1,4 +1,5 @@
 import type { CourseSyncSnapshot, RelaySyncEnvelope, SyncOperationType } from '../models/types';
+import { db } from '../db/database';
 
 export const initialTime = '2026-01-01T10:00:00.000Z';
 
@@ -29,6 +30,28 @@ export const courseSnapshot = (): CourseSyncSnapshot => ({
     remarks: ['Ruhiger Start'],
     details: { startPlace: 'Berg', landPlace: 'Tal', startTeacher: 'Startlehrer', landTeacher: 'Landelehrer', altitudeDifferenceMeters: 850 },
   }],
+});
+
+export const privateCourseSnapshot = (): CourseSyncSnapshot => {
+  const snapshot = courseSnapshot();
+  return {
+    ...snapshot,
+    course: { ...snapshot.course, syncId: 'private-course', name: 'Private course' },
+    flights: snapshot.flights.map((flight) => ({
+      ...flight,
+      syncId: `private-${flight.syncId}`,
+      remarks: ['Private remarks'],
+      details: { ...flight.details, startPlace: 'Private start' },
+    })),
+  };
+};
+
+export const syncDatabaseState = async () => ({
+  courses: await db.courses.toArray(),
+  students: await db.students.toArray(),
+  flights: await db.flights.toArray(),
+  syncEvents: await db.syncEvents.toArray(),
+  receivedMessages: await db.receivedMessages.toArray(),
 });
 
 export const delta = (operation: SyncOperationType, payload: unknown, opTs = '2026-01-01T10:01:00.000Z'): RelaySyncEnvelope => ({
