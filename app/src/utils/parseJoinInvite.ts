@@ -1,42 +1,22 @@
-export type JoinInvitePayload = {
-  type: 'digikladde_join';
-  version: 1;
-  roomId: string;
-  joinSecret: string;
-  courseSyncId?: string;
-};
+import { isSecret } from './e2eCrypto';
 
-export type ParsedJoinInvite = {
-  roomId: string;
-  joinSecret: string;
-  courseSyncId?: string;
-};
+export interface ParsedJoinInvite {
+  version: 2;
+  inviteId: string;
+  key: string;
+}
 
 export const parseJoinInvite = (rawValue: string): ParsedJoinInvite | null => {
-  const text = rawValue.trim();
-  if (!text) return null;
-
   try {
-    const parsed = JSON.parse(text) as Partial<JoinInvitePayload>;
-    if (parsed.type === 'digikladde_join' && parsed.roomId && parsed.joinSecret) {
-      return {
-        roomId: parsed.roomId.trim(),
-        joinSecret: parsed.joinSecret.trim(),
-        courseSyncId: parsed.courseSyncId?.trim() || undefined,
-      };
-    }
+    const fragment = rawValue.startsWith('#')
+      ? rawValue.slice(1)
+      : new URL(rawValue).hash.slice(1);
+    const params = new URLSearchParams(fragment.startsWith('/?') ? fragment.slice(2) : fragment);
+    const inviteId = params.get('invite');
+    const key = params.get('key');
+    if (params.get('v') !== '2' || !isSecret(inviteId) || !isSecret(key) || params.size !== 3) return null;
+    return { version: 2, inviteId, key };
   } catch {
-    // Fallback for old text format.
+    return null;
   }
-
-  const roomIdMatch = text.match(/roomId\s*=\s*([^\n\r]+)/i);
-  const joinSecretMatch = text.match(/joinSecret\s*=\s*([^\n\r]+)/i);
-  const courseSyncIdMatch = text.match(/courseSyncId\s*=\s*([^\n\r]+)/i);
-  if (!roomIdMatch || !joinSecretMatch) return null;
-
-  return {
-    roomId: roomIdMatch[1].trim(),
-    joinSecret: joinSecretMatch[1].trim(),
-    courseSyncId: courseSyncIdMatch?.[1]?.trim() || undefined,
-  };
 };

@@ -83,6 +83,7 @@ npm exec -w app -- playwright install chromium
 npm run test:e2e
 npm run test:e2e -- --grep "shares a flight"
 npm run test:e2e -- --grep "shares a flight" --repeat-each=3
+E2E_APP_BASE_PATH=/digikladde/ npm run test:e2e -- encryption.spec.ts
 ```
 
 Playwright baut App und Relay, startet beide und beendet die eigenen Prozesse
@@ -94,8 +95,28 @@ Secrets, Kamera und Web-Push werden nicht benoetigt.
 Die Tests pruefen Kurs-/Schuelerbearbeitung und einen geteilten Hoehenkurs mit zwei
 getrennten Lehrer-Browser-Kontexten: Start, vorgegebene und ergaenzte Manoever,
 Bewertungen, Landung, manueller/automatischer Abschluss, Flugdauer, Summen und
-Persistenz nach Neuladen. Der PWA-Service-Worker ist im Test deaktiviert; seine
-Offline-/Update-Funktionen sind nicht Gegenstand dieser Suite.
+Persistenz nach Neuladen. Die Lehrer-Fixture deaktiviert den PWA-Service-Worker.
+Die separate `encryption.spec.ts` prueft zusaetzlich opake Sync-/Push- und
+Einladungs-Payloads, Einmal-Einloesung, Offline-Catch-up, erneuten Beitritt ohne
+Kursduplikate und Reconnect-Fehler ohne unbehandelte Browserfehler oder
+wiederholte Fehler-Toasts. Eine Reset-/Rekey-UI ist nicht enthalten.
+Ihr Push-Test aktiviert
+den echten gebauten Service Worker, speichert einen synthetischen lokalen
+Schluessel und injiziert Push-Events ohne offenen App-Tab. Nur die Lebensdauer
+synthetischer Events wird vom Test gehalten; Web Crypto und IndexedDB sind echt.
+Der Aufruf von `showNotification` wird aufgezeichnet, weil native
+Benachrichtigungen auf manchen Headless-/Betriebssystem-Konfigurationen trotz
+Browser-Permission verweigert werden. Native Zustellung und ein externer
+Push-Dienst sind damit nicht getestet und werden nicht kontaktiert.
+Die allgemeinen Offline-/Update-Funktionen der PWA sind nicht Gegenstand dieser Suite.
+
+E2E-V2 verwendet Web Crypto (HKDF/AES-GCM), zehn Minuten gueltige Einmal-Links
+mit Schluessel im URL-Fragment und separate lokale Replay-Zustaende fuer Sync und
+Push. Siehe [Protokoll](relay/docs/protocol.md). Der Preview-Proxy muss neben
+`/relay` und `/push` auch `/invites` und `/health` weiterleiten. Unit-Tests decken
+Manipulation, Bindungen, Schluessellimits, Replay/Transaktions-Rollback und die
+Entfernung von V1-Sessions und alten Sync-Ereignissen ohne Verlust lokaler
+Kurs-, Schueler- oder Flugdaten ab.
 
 **Zeitabhaengige Tests warten keine fachlichen Fristen in Echtzeit ab.**
 Unit-Tests verwenden vorgegebene Zeitstempel. Die Browser-Fixture installiert

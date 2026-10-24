@@ -2,7 +2,27 @@ import { z } from 'zod';
 
 const identifier = z.string().min(1);
 const sequence = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
-const objectPayload = z.record(z.string(), z.unknown());
+export const encryptedBoxSchema = z.strictObject({
+  version: z.literal(2),
+  roomId: identifier.max(256),
+  courseSyncId: identifier.max(256),
+  deviceId: identifier.max(256),
+  messageId: identifier.max(256),
+  epoch: identifier.max(256),
+  purpose: z.enum(['delta', 'snapshot', 'snapshot_request', 'push', 'invite']),
+  iv: z.string().regex(/^[A-Za-z0-9_-]{16}$/),
+  ciphertext: z.string().regex(/^[A-Za-z0-9_-]{22,}$/),
+});
+export const invitationRedeemSchema = z.strictObject({
+  inviteId: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+});
+export const invitationCreateSchema = invitationRedeemSchema.extend({
+  roomId: identifier.max(256),
+  deviceId: identifier.max(256),
+  ticket: identifier.max(256),
+  box: encryptedBoxSchema,
+  expiresAt: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+});
 
 export const joinRequestPayloadSchema = z.strictObject({
   roomId: z.string().trim().min(1),
@@ -28,7 +48,7 @@ export const pushSubscriptionPayloadSchema = z.strictObject({
 });
 
 const envelopeFields = {
-  version: z.literal(1),
+  version: z.literal(2),
   roomId: identifier.optional(),
   deviceId: identifier.optional(),
   ticket: identifier.optional(),
@@ -76,16 +96,11 @@ export const clientEnvelopeSchema = z.discriminatedUnion('type', [
   }),
   z.strictObject({
     ...joinedFields,
-    type: z.enum([
-      'peer_key_request',
-      'peer_key_response',
-      'sync_request',
-      'sync_response',
-      'rekey_prepare',
-      'rekey_ack',
-      'rekey_commit',
-    ]),
-    payload: objectPayload.optional(),
+    type: z.enum(['sync_request', 'sync_response']),
+    payload: z.strictObject({
+      box: encryptedBoxSchema,
+      push: encryptedBoxSchema.optional(),
+    }),
   }),
 ]);
 

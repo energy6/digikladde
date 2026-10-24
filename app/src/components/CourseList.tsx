@@ -99,7 +99,7 @@ const CourseList = () => {
   const [editCourseId, setEditCourseId] = useState<number | undefined>(undefined);
   const [initialJoinInviteRaw, setInitialJoinInviteRaw] = useState<string | undefined>(undefined);
   const { activeFlightSchool, setActiveFlightSchool } = useFlightSchool();
-  const { deviceId } = useRelaySync();
+  const { deviceId, leaveShareSession } = useRelaySync();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -112,24 +112,26 @@ const CourseList = () => {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-
-    const params = new URLSearchParams(window.location.search);
-    const joinInvite = params.get('joinInvite');
-    if (!joinInvite) return;
-
-    const parsed = parseJoinInvite(joinInvite);
-    params.delete('joinInvite');
-    const nextQuery = params.toString();
-    const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}${window.location.hash}`;
-    window.history.replaceState({}, '', nextUrl);
-
-    if (!parsed) {
-      message.error('Der Share-Link ist ungültig oder unvollständig.');
-      return;
-    }
-
-    setInitialJoinInviteRaw(joinInvite);
-    setCreateModalOpen(true);
+    const handleInvitation = () => {
+      const params = new URLSearchParams(window.location.search);
+      const oldInvite = params.get('joinInvite');
+      const joinInvite = window.location.hash;
+      if (!oldInvite && !joinInvite.includes('invite=')) return;
+      const parsed = !oldInvite && parseJoinInvite(joinInvite);
+      params.delete('joinInvite');
+      const nextQuery = params.toString();
+      const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}${import.meta.env.BASE_URL === '/' ? '' : '#/'}`;
+      window.history.replaceState(window.history.state, '', nextUrl);
+      if (!parsed) {
+        message.error('Der Share-Link ist ungültig oder veraltet. Bitte eine neue Einladung anfordern.');
+        return;
+      }
+      setInitialJoinInviteRaw(joinInvite);
+      setCreateModalOpen(true);
+    };
+    handleInvitation();
+    window.addEventListener('hashchange', handleInvitation);
+    return () => window.removeEventListener('hashchange', handleInvitation);
   }, []);
 
   const flightSchoolOptions = useMemo(() => extractFlightSchools(courses.map((course) => course.flightSchool)), [courses]);
@@ -175,6 +177,8 @@ const CourseList = () => {
       onOk: async () => {
         try {
           for (const id of selectedCourses) {
+            const course = await db.courses.get(id);
+            if (course?.syncId) await leaveShareSession(course.syncId);
             await db.courses.delete(id);
           }
 
@@ -271,6 +275,7 @@ const CourseList = () => {
             </Typography.Title>
             <Space orientation="horizontal" size="small" align="center">
               <Button
+                aria-label="Delete courses"
                 type={deleteMode ? 'primary' : 'default'}
                 icon={<FontAwesomeIcon icon={faTrashCan} />}
                 onClick={() => (deleteMode && selectedCourses.size > 0) ? handleDeleteCourses() : handleTrashClick()}

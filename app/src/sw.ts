@@ -1,14 +1,9 @@
 /// <reference lib="webworker" />
 
 import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching';
+import { resolveEncryptedPush } from './utils/encryptedPush';
 
 declare const self: ServiceWorkerGlobalScope;
-
-type PushPayload = {
-  title?: string;
-  body?: string;
-  data?: Record<string, unknown>;
-};
 
 const resolveAssetUrl = (path: string) => new URL(path, self.registration.scope).toString();
 
@@ -22,17 +17,22 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('push', (event) => {
-  const payload = event.data?.json() as PushPayload | undefined;
-  const title = payload?.title ?? 'DigiKladde';
-  const options: NotificationOptions = {
-    body: payload?.body ?? 'Neue Kursdaten verfügbar.',
-    icon: resolveAssetUrl('icon-192.png'),
-    badge: resolveAssetUrl('notification-badge.png'),
-    data: payload?.data ?? {},
-    tag: 'digikladde-sync',
-  };
-
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil((async () => {
+    let payload: unknown;
+    try {
+      payload = event.data?.json() as unknown;
+    } catch {
+      console.warn('Push: Nachricht ist kein JSON.');
+    }
+    const notification = await resolveEncryptedPush(payload);
+    if (!notification) return;
+    await self.registration.showNotification(notification.title, {
+      body: notification.body,
+      icon: resolveAssetUrl('icon-192.png'),
+      badge: resolveAssetUrl('notification-badge.png'),
+      tag: 'digikladde-sync',
+    });
+  })());
 });
 
 self.addEventListener('notificationclick', (event) => {

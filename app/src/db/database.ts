@@ -1,6 +1,7 @@
 import Dexie, { type Table } from 'dexie';
 import type { Course, Flight, ShareSession, Student, SyncEvent } from '../models/types';
 import { sanitizeFlightSchoolName } from '../utils/flightSchool';
+import type { ReceivedMessage, RoomKey } from '../utils/roomKeys';
 
 export class DigiKladdeDB extends Dexie {
   courses!: Table<Course>;
@@ -8,6 +9,8 @@ export class DigiKladdeDB extends Dexie {
   flights!: Table<Flight>;
   syncEvents!: Table<SyncEvent>;
   shareSessions!: Table<ShareSession>;
+  roomKeys!: Table<RoomKey, string>;
+  receivedMessages!: Table<ReceivedMessage, string>;
 
   private createSyncId(prefix: string): string {
     if (typeof globalThis.crypto !== 'undefined' && typeof globalThis.crypto.randomUUID === 'function') {
@@ -116,11 +119,17 @@ export class DigiKladdeDB extends Dexie {
             totalAltitudeMeters: student.totalAltitudeMeters ?? 0,
           }));
         });
-
         await tx.table<Student>('students').toCollection().modify((student) => {
           student.totalAltitudeMeters = student.totalAltitudeMeters ?? 0;
         });
       });
+    this.version(7).stores({
+      roomKeys: '&roomId, courseSyncId',
+      receivedMessages: '&id, roomId',
+    }).upgrade(async (tx) => {
+      await tx.table('shareSessions').clear();
+      await tx.table('syncEvents').clear();
+    });
   }
 }
 

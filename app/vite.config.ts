@@ -86,6 +86,12 @@ export default defineConfig({
       '/push': {
         target: 'http://127.0.0.1:8080',
       },
+      '/invites': {
+        target: 'http://127.0.0.1:8080',
+      },
+      '/health': {
+        target: 'http://127.0.0.1:8080',
+      },
     },
   },
   define: {

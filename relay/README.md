@@ -1,4 +1,4 @@
-# DigiKladde Relay (V1)
+# DigiKladde Relay (V2)
 
 Relay server for encrypted peer signaling and sync message forwarding.
 
@@ -10,6 +10,16 @@ This service is transport-only:
 - Issues short-lived tickets
 - Forwards peer events in a room
 - Does not decrypt E2E payloads
+- Holds encrypted, ten-minute, single-use invitation packages in RAM
+- Forwards sender-encrypted push contents without interpreting course data
+
+App and relay must both use V2. Old sharing sessions must be recreated;
+local course data is retained. See [the protocol](docs/protocol.md) for the
+cryptographic contract and privacy boundaries.
+
+Reverse proxies must forward `/relay` (WebSocket), `/push/*`, `/health`,
+and `POST/OPTIONS /invites` and `/invites/redeem`. Do not cache invitation
+responses or log request bodies. Public deployments require HTTPS/WSS.
 
 Join payloads must be objects with nonempty string fields `roomId`, `deviceId`
 and `joinSecret`. Strings are trimmed before use. Invalid join data receives an
@@ -137,7 +147,7 @@ docker pull ghcr.io/<github-org-or-user>/digikladde-relay:main
 - `RELAY_HOST` (default `0.0.0.0`)
 - `RELAY_PORT` (default `8080`)
 - `RELAY_WS_PATH` (default `/relay`)
-- `RELAY_MAX_PAYLOAD_BYTES` (default `131072`)
+- `RELAY_MAX_PAYLOAD_BYTES` (default `180224`, including encryption overhead)
 - `RELAY_MAX_CONNECTIONS_PER_IP` (default `40`)
 - `RELAY_MAX_EVENTS_PER_MINUTE_PER_IP` (default `1200`)
 - `RELAY_MAX_JOIN_PER_MINUTE_PER_ROOM` (default `100`)

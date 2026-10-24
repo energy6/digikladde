@@ -4,7 +4,6 @@ import { QRCodeSVG } from 'qrcode.react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRelaySync } from '../context/RelaySyncContext';
 import type { Course, ShareSession } from '../models/types';
-import type { JoinInvitePayload } from '../utils/parseJoinInvite';
 
 const formatLastSync = (isoTimestamp?: string): string => {
   if (!isoTimestamp) return 'Noch nicht synchronisiert';
@@ -28,6 +27,7 @@ type Props = {
 const CourseSyncFooter = ({ course }: Props) => {
   const {
     startShareSession,
+    createJoinInvitation,
     getShareSession,
     connectCourseSession,
     disconnectCourseSession,
@@ -38,6 +38,7 @@ const CourseSyncFooter = ({ course }: Props) => {
   const [busyAction, setBusyAction] = useState<'share' | 'resync' | null>(null);
   const [qrShareModalOpen, setQrShareModalOpen] = useState(false);
   const [webShareAvailable, setWebShareAvailable] = useState(false);
+  const [shareLink, setShareLink] = useState('');
   const isSharedCourse = useMemo(() => Boolean(shareSession?.courseSyncId), [shareSession?.courseSyncId]);
 
   const refreshShareSession = useCallback(async (courseSyncId?: string) => {
@@ -79,12 +80,13 @@ const CourseSyncFooter = ({ course }: Props) => {
       setBusyAction('share');
       const session = await startShareSession({ courseId: course.id });
       setShareSession(session);
-      await connectCourseSession(course.id);
+      const basePath = window.location.pathname.replace(/\/course\/[^/]+$/, '/');
+      setShareLink(await createJoinInvitation(course.id, new URL(basePath, window.location.origin).toString()));
       await refreshShareSession(session.courseSyncId);
       setQrShareModalOpen(true);
       message.success('Kurs ist jetzt geteilt. QR-Code geöffnet.');
-    } catch {
-      message.error('Kurs konnte nicht geteilt werden.');
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : 'Kurs konnte nicht geteilt werden.');
     } finally {
       setBusyAction(null);
     }
@@ -109,25 +111,6 @@ const CourseSyncFooter = ({ course }: Props) => {
       setBusyAction(null);
     }
   };
-
-  const shareQrPayload = shareSession
-    ? JSON.stringify({
-        type: 'digikladde_join',
-        version: 1,
-        roomId: shareSession.roomId,
-        joinSecret: shareSession.joinSecret,
-        courseSyncId: shareSession.courseSyncId,
-      } satisfies JoinInvitePayload)
-    : '';
-
-  const shareLink = useMemo(() => {
-    if (!shareQrPayload || typeof window === 'undefined') return '';
-
-    const basePath = window.location.pathname.replace(/\/course\/[^/]+$/, '/');
-    const url = new URL(basePath, window.location.origin);
-    url.searchParams.set('joinInvite', shareQrPayload);
-    return url.toString();
-  }, [shareQrPayload]);
 
   const handleShareByLink = useCallback(async () => {
     if (!shareLink) {
@@ -192,6 +175,7 @@ const CourseSyncFooter = ({ course }: Props) => {
               <>
                 <Tooltip title="Ausstehende Updates senden und neuen Snapshot anfordern">
                   <Button
+                    aria-label="Resync course"
                     icon={<ReloadOutlined />}
                     type="primary"
                     onClick={() => void handleResync()}
@@ -221,7 +205,7 @@ const CourseSyncFooter = ({ course }: Props) => {
       >
         {shareSession ? (
           <Space orientation="vertical" size="middle" style={{ width: '100%', alignItems: 'center' }}>
-            <QRCodeSVG value={shareQrPayload} size={260} marginSize={4} />
+            <QRCodeSVG value={shareLink} size={260} marginSize={4} />
             {webShareAvailable ? (
               <Button icon={<LinkOutlined />} onClick={() => void handleShareByLink()}>
                 Per Link teilen
@@ -236,7 +220,8 @@ const CourseSyncFooter = ({ course }: Props) => {
               />
             )}
             <span style={{ color: '#8c8c8c', fontSize: 12, textAlign: 'center' }}>
-              Mit einer anderen DigiKladde per QR-Code beitreten. Dieses Gerät bleibt während des ersten Sync online.
+              Einladung gilt zehn Minuten und für ein Gerät. Für weitere Geräte erneut teilen.
+              Dieses Gerät bleibt während des ersten Sync online.
             </span>
           </Space>
         ) : (

@@ -212,6 +212,10 @@
       <ul>
         <li>Öffne im Kurs die Freigabe über den Teilen-Button im Kursfuß.</li>
         <li>Der QR-Code kann von einem anderen Gerät gescannt oder per Link weitergegeben werden.</li>
+        <li>Eine Einladung gilt zehn Minuten und kann nur auf einem Gerät eingelöst werden. Für jedes weitere Gerät erneut teilen.</li>
+        <li>Kursdaten und Push-Inhalte werden Ende-zu-Ende verschlüsselt. Das weitergebende Gerät muss für den ersten Datenabgleich online bleiben.</li>
+        <li>Einzelne Geräte können derzeit nicht nachträglich ausgeschlossen werden; eine Funktion zum Wechseln des Raumschlüssels wird nicht angeboten. Bereits kopierte Daten lassen sich nicht zurückrufen.</li>
+        <li>Nach dem Update müssen bisher geteilte Kurse erneut freigegeben werden. Lokale Kursdaten bleiben erhalten; alte Clients und Einladungen werden nicht unterstützt.</li>
         <li>Per Link teilen nutzt den System-Teilen-Dialog oder kopiert den Share-Link.</li>
       </ul>
     </td>
@@ -228,6 +232,9 @@
       <ul>
         <li>Öffne die Kurserstellung und starte den QR-Scanner für einen geteilten Kurs.</li>
         <li>Richte die Kamera auf den QR-Code oder füge den Invite-Link indirekt über den Scanvorgang ein.</li>
+        <li>Ein Einladungslink kann auch direkt im Browser geöffnet werden. Er enthält einen geheimen Schlüssel und darf nur gezielt weitergegeben werden.</li>
+        <li>Fachdaten und Schlüssel werden lokal im Browser gespeichert, jedoch nicht zusätzlich im Ruhezustand verschlüsselt. Schütze dein Geräte- und Browserprofil.</li>
+        <li>Detaillierte Push-Hinweise werden erst auf deinem Gerät entschlüsselt, können dann aber auf dem Sperrbildschirm sichtbar sein.</li>
       </ul>
     </td>
     <td valign="top" width="360">
