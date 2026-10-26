@@ -61,10 +61,10 @@
     "vite-plugin-pwa": "^2.0.0"
   },
   "optionalDependencies": {
-    "@rolldown/binding-darwin-arm64": "1.2.14",
-    "@rolldown/binding-linux-x64-gnu": "1.2.14",
-    "@rollup/rollup-darwin-arm64": "4.64.12",
-    "@rollup/rollup-linux-x64-gnu": "4.64.12",
+    "@rolldown/binding-darwin-arm64": "1.2.15",
+    "@rolldown/binding-linux-x64-gnu": "1.2.15",
+    "@rollup/rollup-darwin-arm64": "4.65.0",
+    "@rollup/rollup-linux-x64-gnu": "4.65.0",
     "lightningcss-darwin-arm64": "1.33.0",
     "lightningcss-linux-x64-gnu": "1.33.0"
   }
